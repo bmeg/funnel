@@ -1,10 +1,13 @@
+import os
 import sys
 import math
 import time
 import json
+import argparse
 import random
 import string
 import threading
+import yaml
 
 import cwltool.main
 import cwltool.docker
@@ -13,10 +16,18 @@ import cwltool.workflow
 import cwltool.draft2tool
 
 from pprint import pprint
-from oauth2client.client import GoogleCredentials
-from apiclient.discovery import build
+try:
+  from oauth2client.client import GoogleCredentials
+  from apiclient.discovery import build
+  offline = False
+except ImportError:
+  offline = True
 
-class Pipeline(object):
+class LocalPipeline:
+  def __init__(self):
+      pass
+
+class GCEPipeline(object):
   def __init__(self):
     self.credentials = GoogleCredentials.get_application_default()
     self.service = build('genomics', 'v1alpha2', credentials=self.credentials)
@@ -188,6 +199,7 @@ class CommandJob(cwltool.job.CommandLineJob):
     this = self
 
     def runnnn(this, kwargs):
+      print("Starting Thread")
       # interval = math.ceil(random.random() * 5)
       # print("sleeping for " + str(interval))
       # time.sleep(interval)
@@ -333,20 +345,57 @@ class PipelineRunner(object):
 
 def main(args):
   print(args)
-
-  pipeline_args = {
-    'project-id': 'machine-generated-837',
-    'service-account' : 'SOMENUMBER-compute@developer.gserviceaccount.com',
-    'bucket' : 'your-bucket',
-    'container' : 'samtools',
-    'output-file' : 'path/to/where/you/want/google/pipeline/to/put/your/output'
-  }
   
-  # parser = cwltool.main.arg_parser()
-  pipeline = Pipeline()
+  parser = arg_parser()
+  newargs = parser.parse_args(args)
+  
+  if newargs.gce is not None:
+      pipeline = GCEPipeline()
+      with open(newargs.gce) as handle:
+          pipeline_args = yaml.load(handle.read())
+  else:
+      pipeline = LocalPipeline()
+      pipeline_args = {}
+  
   runner = PipelineRunner(pipeline, pipeline_args)
-  cwltool.main.main(args, executor=runner.pipeline_executor, makeTool=runner.pipeline_make_tool)
+  cwltool.main.main(args=newargs, executor=runner.pipeline_executor, makeTool=runner.pipeline_make_tool)
 
-if __name__ == '__main__':
+
+def arg_parser():  # type: () -> argparse.ArgumentParser
+    parser = argparse.ArgumentParser(description='Arvados executor for Common Workflow Language')
+
+    parser.add_argument("--basedir", type=str,
+                        help="Base directory used to resolve relative references in the input, default to directory of input object file or current directory (if inputs piped/provided on command line).")
+    parser.add_argument("--outdir", type=str, default=os.path.abspath('.'),
+                        help="Output directory, default current directory")
+    parser.add_argument("--conformance-test", action="store_true", default=False)
+
+    parser.add_argument("--eval-timeout",
+                        help="Time to wait for a Javascript expression to evaluate before giving an error, default 20s.",
+                        type=float,
+                        default=20)
+    parser.add_argument("--version", action="store_true", help="Print version and exit")
+    
+    parser.add_argument("--gce", default=None, help="Google Compute Config")
+
+    exgroup = parser.add_mutually_exclusive_group()
+    exgroup.add_argument("--verbose", action="store_true", help="Default logging")
+    exgroup.add_argument("--quiet", action="store_true", help="Only print warnings and errors.")
+    exgroup.add_argument("--debug", action="store_true", help="Print even more logging")
+
+    parser.add_argument("--tool-help", action="store_true", help="Print command line help for tool")
+
+    parser.add_argument("--project-uuid", type=str, help="Project that will own the workflow jobs, if not provided, will go to home project.")
+    parser.add_argument("--ignore-docker-for-reuse", action="store_true",
+                        help="Ignore Docker image version when deciding whether to reuse past jobs.",
+                        default=False)
+
+    parser.add_argument("workflow", type=str, nargs="?", default=None, help="The workflow to execute")
+    parser.add_argument("job_order", nargs=argparse.REMAINDER, help="The input object to the workflow.")
+
+    return parser
+
+
+if __name__ == '__main__':  
   sys.exit(main(sys.argv[1:]))
 
