@@ -257,7 +257,7 @@ class CommandTool(cwltool.draft2tool.CommandLineTool):
 
   def makePathMapper(self, reffiles, **kwargs):
     useDocker = False
-    for i in self.spec.get("requirements", []):
+    for i in self.spec.get("requirements", []) + self.spec.get("hints", []):
       if i.get("class", "NA") == "DockerRequirement":
         useDocker = True
     if useDocker:
