@@ -209,9 +209,6 @@ class CommandJob(cwltool.job.CommandLineJob):
 
     def runnnn(this, kwargs):
       print("Starting Thread")
-      # interval = math.ceil(random.random() * 5)
-      # print("sleeping for " + str(interval))
-      # time.sleep(interval)
       super(CommandJob, this).run(**kwargs)
 
     thread = threading.Thread(target=runnnn, args=(this, kwargs))
@@ -230,7 +227,6 @@ class PipelinePathMapper(cwltool.pathmapper.PathMapper):
       else:
         ab = 'gs://' + bucket + '/' + output + '/' + src
         self._pathmap[src] = (ab, ab)
-        # ab = cwltool.pathmapper.abspath(src, basedir)
 
       self._pathmap[ab] = (ab, ab)
 
@@ -293,70 +289,6 @@ class PipelineRunner(object):
       if runnable:
         runnable.run(**kwargs)
 
-    # jobs = map(lambda j: lambda(r, k): r.run(k), filter(lambda x: x, job))
-    # self.pool.map(lambda j: j.run(**kwargs), job)
-    # self.pool.join()
-
-
-    # processes = []
-    # for runnable in job:
-    #   if runnable:
-    #     def run(runnable, kwargs):
-    #       print('Running! ' + str(runnable))
-    #       runnable.run(**kwargs)
-    #       print('done running ' + str(runnable))
-
-    #     process = Process(target=run, args=[runnable, kwargs])
-    #     process.start()
-    #     processes.append(process)
-
-    # for process in processes:
-    #   process.join()
-
-
-    # try:
-    #     self.cond.acquire()
-
-    #     for runnable in job:
-    #         if runnable:
-    #             runnable.run(**kwargs)
-    #         else:
-    #             if self.jobs:
-    #                 self.cond.wait(1)
-    #             else:
-    #                 print('DEADLOCK')
-    #                 break
-
-    #     while self.jobs:
-    #         self.cond.wait(1)
-
-    # except:
-    #     print(sys.exc_info())
-    # finally:
-    #     self.cond.release()
-
-
-    # def run(runnable, kwargs):
-    #   print('Running! ' + str(runnable))
-    #   runnable.run(**kwargs)
-    #   print('done running ' + str(runnable))
-
-    # print(job)
-    # print(dir(job))
-
-    # threads = []
-    # for runnable in job:
-    #   if runnable:
-    #     thread = threading.Thread(target=run, args=[runnable, kwargs])
-    #     thread.start()
-    #     threads.append(thread)
-
-    # for thread in threads:
-    #   thread.start()
-
-    # for thread in threads:
-    #   thread.join()
-        
     print('all processes have joined')
     print(self.output)
 
