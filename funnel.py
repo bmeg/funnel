@@ -157,6 +157,7 @@ class PipelineJob(object):
     
   def run(self, dry_run=False, pull_image=True, **kwargs):
     id = self.spec['id']
+    mount = '/mnt/data'
     pprint(self.spec)
 
     input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
@@ -166,10 +167,16 @@ class PipelineJob(object):
     outputs = {output['id'].replace(id + '#', ''): output['outputBinding']['glob'] for output in self.spec['outputs']}
 
     command_parts = self.spec['baseCommand'][:]
-    command_parts.extend(self.spec['arguments'])
+    if 'arguments' in self.spec:
+      command_parts.extend(self.spec['arguments'])
+
+    for input in self.spec['inputs']:
+      input_id = input['id'].replace(id + '#', '')
+      path = mount + '/' + self.builder.job[input_id]['path'].replace('gs://', '')
+      command_parts.append(path)
+
     command = string.join(command_parts, ' ')
-    
-    mount = '/mnt/data'
+        
     if self.spec['stdout']:
       command += ' > ' + mount + '/' + self.spec['stdout']
 
@@ -188,7 +195,7 @@ class PipelineJob(object):
     collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
     pprint(collected)
 
-    interval = math.ceil(random.random() * 10)
+    interval = math.ceil(random.random() * 5 + 5)
     poll = PipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
     poll.start()
 
@@ -211,15 +218,19 @@ class CommandJob(cwltool.job.CommandLineJob):
     thread.start()
 
 class PipelinePathMapper(cwltool.pathmapper.PathMapper):
-  def __init__(self, referenced_files, basedir):
+  def __init__(self, referenced_files, bucket, output):
     self._pathmap = {}
+    print("PATHMAPPER: " + output)
     for src in referenced_files:
+      print(src)
       if src.startswith('gs://'):
         ab = src
         iiib = src.split('/')[-1]
         self._pathmap[iiib] = (iiib, ab)
       else:
-        ab = cwltool.pathmapper.abspath(src, basedir)
+        ab = 'gs://' + bucket + '/' + output + '/' + src
+        self._pathmap[src] = (ab, ab)
+        # ab = cwltool.pathmapper.abspath(src, basedir)
 
       self._pathmap[ab] = (ab, ab)
 
@@ -234,7 +245,7 @@ class PipelineTool(cwltool.draft2tool.CommandLineTool):
     return PipelineJob(self.spec, self.pipeline, self.pipeline_args)
 
   def makePathMapper(self, reffiles, **kwargs):
-    return PipelinePathMapper(reffiles, kwargs['basedir'])
+    return PipelinePathMapper(reffiles, self.pipeline_args['bucket'], self.pipeline_args['output-path'])
 
 class CommandTool(cwltool.draft2tool.CommandLineTool):
   def __init__(self, spec, **kwargs):
