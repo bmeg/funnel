@@ -252,8 +252,14 @@ class CommandTool(cwltool.draft2tool.CommandLineTool):
     return CommandJob(self.spec)
 
   def makePathMapper(self, reffiles, **kwargs):
+    useDocker = False
+    for i in self.spec.get("requirements", []):
+      if i.get("class", "NA") == "DockerRequirement":
+        useDocker = True
+    if useDocker:
+      return cwltool.pathmapper.DockerPathMapper(reffiles, kwargs['basedir'])
     return cwltool.pathmapper.PathMapper(reffiles, kwargs['basedir'])
-
+  
 class PipelineRunner(object):
   def __init__(self, pipeline, pipeline_args):
     self.pipeline = pipeline
