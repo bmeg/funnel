@@ -141,6 +141,7 @@ class PipelinePoll(threading.Thread):
     operation = self.operation
     while not operation['done']:
       time.sleep(self.poll_interval)
+      print('POLLING ' + operation['name'])
       operation = self.service.operations().get(name=operation['name']).execute()
 
     pprint(operation)
@@ -187,7 +188,8 @@ class PipelineJob(object):
     collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
     pprint(collected)
 
-    poll = PipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'))
+    interval = math.ceil(random.random() * 10)
+    poll = PipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
     poll.start()
 
 class CommandJob(cwltool.job.CommandLineJob):
@@ -259,7 +261,7 @@ class PipelineRunner(object):
 
   def pipeline_make_tool(self, spec, **kwargs):
     if 'class' in spec and spec['class'] == 'CommandLineTool':
-      if 'pipeline' in kwargs:
+      if 'project-id' in self.pipeline_args:
         return PipelineTool(spec, self.pipeline, self.pipeline_args, **kwargs)
       else:
         return CommandTool(spec, **kwargs)
