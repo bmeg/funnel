@@ -7,6 +7,7 @@ import argparse
 import random
 import string
 import threading
+import logging
 import yaml
 
 import cwltool.main
@@ -23,6 +24,8 @@ try:
 except ImportError:
   offline = True
 
+DEBUG=False
+  
 class LocalPipeline:
   def __init__(self):
       pass
@@ -110,10 +113,12 @@ class GCEPipeline(object):
     
   def funnel_to_pipeline(self, project_id, container, service_account, bucket, command, inputs, outputs, output_path, mount):
     body = self.create_pipeline(project_id, container, service_account, bucket, command, inputs, outputs, output_path, mount)
-    pprint(body)
+    if DEBUG:
+        pprint(body)
     
     result = self.run_pipeline(body)
-    pprint(result)
+    if DEBUG:
+        pprint(result)
     
     return result
       
@@ -141,10 +146,11 @@ class PipelinePoll(threading.Thread):
     operation = self.operation
     while not operation['done']:
       time.sleep(self.poll_interval)
-      print('POLLING ' + operation['name'])
+      logging.debug('POLLING ' + operation['name'])
       operation = self.service.operations().get(name=operation['name']).execute()
 
-    pprint(operation)
+    if DEBUG:
+        pprint(operation)
     self.success = operation
     self.callback(self.outputs)
 
@@ -158,7 +164,8 @@ class PipelineJob(object):
   def run(self, dry_run=False, pull_image=True, **kwargs):
     id = self.spec['id']
     mount = '/mnt/data'
-    pprint(self.spec)
+    if DEBUG:
+        pprint(self.spec)
 
     input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
     inputs = {input: self.builder.job[input]['path'] for input in input_ids}
@@ -193,7 +200,8 @@ class PipelineJob(object):
     )
     
     collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
-    pprint(collected)
+    if DEBUG:
+        pprint(collected)
 
     interval = math.ceil(random.random() * 5 + 5)
     poll = PipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
@@ -208,7 +216,7 @@ class CommandJob(cwltool.job.CommandLineJob):
     this = self
 
     def runnnn(this, kwargs):
-      print("Starting Thread")
+      logging.debug("Starting Thread")
       super(CommandJob, this).run(**kwargs)
 
     thread = threading.Thread(target=runnnn, args=(this, kwargs))
@@ -217,9 +225,9 @@ class CommandJob(cwltool.job.CommandLineJob):
 class PipelinePathMapper(cwltool.pathmapper.PathMapper):
   def __init__(self, referenced_files, bucket, output):
     self._pathmap = {}
-    print("PATHMAPPER: " + output)
+    logging.debug("PATHMAPPER: " + output)
     for src in referenced_files:
-      print(src)
+      logging.debug(src)
       if src.startswith('gs://'):
         ab = src
         iiib = src.split('/')[-1]
@@ -267,9 +275,9 @@ class PipelineRunner(object):
 
   def output_callback(self, out, status):
     if status == 'success':
-      print('Job completed!')
+      logging.info('Job completed!')
     else:
-      print('Job failed...')
+      logging.info('Job failed...')
     self.output = out
 
   def pipeline_make_tool(self, spec, **kwargs):
@@ -282,21 +290,21 @@ class PipelineRunner(object):
       return cwltool.workflow.defaultMakeTool(spec, **kwargs)
 
   def pipeline_executor(self, tool, job_order, **kwargs):
-    pprint(kwargs)
+    if DEBUG:
+        pprint(kwargs)
     job = tool.job(job_order, self.output_callback, **kwargs)
 
     for runnable in job:
       if runnable:
         runnable.run(**kwargs)
 
-    print('all processes have joined')
-    print(self.output)
+    logging.info('all processes have joined')
+    logging.info(self.output)
 
     return self.output
 
 def main(args):
-  print(args)
-  
+    
   parser = arg_parser()
   newargs = parser.parse_args(args)
   
