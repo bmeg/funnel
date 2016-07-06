@@ -2,3 +2,4 @@ project-id: machine-generated-837
 service-account: SOMENUMBER-compute@developer.gserviceaccount.com
 bucket: your-bucket
 output-file: path/to/where/you/want/google/pipeline/to/put/your/output
+container : container-containing-your-tool

@@ -33,24 +33,24 @@ DEFAULT_IMAGE = "ubuntu:15.04"
 
 class PollThread(threading.Thread):
   def __init__(self, operation, poll_interval=5):
-    super(PipelinePoll, self).__init__()
+    super(PollThread, self).__init__()
     self.operation = operation
     self.poll_interval = poll_interval
     self.success = None
 
   def poll(self):
-    raise Exception("Not Implemented")
+    raise Exception("PollThread.poll() not implemented")
 
   def is_done(self, operation):
-    raise Exception("Not Implemented")
+    raise Exception("PollThread.is_done(operation) not implemented")
 
   def complete(self, operation):
-    raise Exception("Not Implemented")
+    raise Exception("PollThread.complete(operation) not implemented")
 
   def run(self):
     while not self.is_done(self.operation):
       time.sleep(self.poll_interval)
-      logging.debug('POLLING ' + operation['name'])
+      print('POLLING ' + self.operation['name'])
       self.operation = self.poll()
 
     if DEBUG:
@@ -109,10 +109,10 @@ class Pipeline(object):
     Given a cwl spec and job create a engine task and pass back data structure
     to use for submission
     """
-    raise Exception("Not Implemented")
+    raise Exception("Pipeline.create_task() not implemented")
     
   def run_task(self, task):
-    raise Exception("Not Implemented")
+    raise Exception("Pipeline.run_task() not implemented")
     
   def executor(self, tool, job_order, **kwargs):
     if DEBUG:
@@ -131,7 +131,7 @@ class Pipeline(object):
     return self.output
 
   def make_exec_tool(self, spec, **kwargs):
-    raise Exception("Not Implemented")
+    raise Exception("Pipeline.make_exec_tool() not implemented")
 
   def make_tool(self, spec, **kwargs):
     if 'class' in spec and spec['class'] == 'CommandLineTool':
@@ -154,7 +154,7 @@ class PipelineJob(object):
     self.running = False
     
   def run(self, dry_run=False, pull_image=True, **kwargs):
-      raise Exception("Not Implemented")
+      raise Exception("PipelineJob.run() not implemented")
 
 ################################################################################
 ## Command Line Tools
@@ -203,11 +203,94 @@ class CommandPipeline(Pipeline):
 ## GCE Pipeline API Code
 ################################################################################
 
+class GCEPipelinePoll(PollThread):
+  def __init__(self, service, operation, outputs, callback, poll_interval=5):
+    super(GCEPipelinePoll, self).__init__(operation, poll_interval)
+    self.service = service
+    self.outputs = outputs
+    self.callback = callback
+
+  def poll(self):
+    return self.service.operations().get(name=self.operation['name']).execute()
+
+  def is_done(self, operation):
+    return operation['done']
+
+  def complete(self, operation):
+    self.callback(self.outputs)
+
+class GCEPipelineJob(object):
+  def __init__(self, spec, pipeline):
+    self.spec = spec
+    self.pipeline = pipeline
+    self.running = False
+    
+  def run(self, dry_run=False, pull_image=True, **kwargs):
+    id = self.spec['id']
+    mount = '/mnt/data'
+    if DEBUG:
+        pprint(self.spec)
+
+    input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
+    inputs = {input: self.builder.job[input]['path'] for input in input_ids}
+    
+    output_path = self.pipeline.config['output-path']
+    outputs = {output['id'].replace(id + '#', ''): output['outputBinding']['glob'] for output in self.spec['outputs']}
+
+    command_parts = self.spec['baseCommand'][:]
+    if 'arguments' in self.spec:
+      command_parts.extend(self.spec['arguments'])
+
+    for input in self.spec['inputs']:
+      input_id = input['id'].replace(id + '#', '')
+      path = mount + '/' + self.builder.job[input_id]['path'].replace('gs://', '')
+      command_parts.append(path)
+
+    command = string.join(command_parts, ' ')
+        
+    if self.spec['stdout']:
+      command += ' > ' + mount + '/' + self.spec['stdout']
+
+    operation = self.pipeline.funnel_to_pipeline(
+      self.pipeline.config['project-id'],
+      self.pipeline.config['container'],
+      self.pipeline.config['service-account'],
+      self.pipeline.config['bucket'],
+      command,
+      inputs,
+      outputs,
+      output_path,
+      mount
+    )
+    
+    collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
+    if DEBUG:
+        pprint(collected)
+
+    interval = math.ceil(random.random() * 5 + 5)
+    poll = GCEPipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
+    poll.start()
+
+class GCEPipelineTool(cwltool.draft2tool.CommandLineTool):
+  def __init__(self, spec, pipeline, **kwargs):
+    super(GCEPipelineTool, self).__init__(spec, **kwargs)
+    self.spec = spec
+    self.pipeline = pipeline
+    
+  def makeJobRunner(self):
+    return GCEPipelineJob(self.spec, self.pipeline)
+
+  def makePathMapper(self, reffiles, **kwargs):
+    return GCEPathMapper(reffiles, self.pipeline.config['bucket'], self.pipeline.config['output-path'])
+
 class GCEPipeline(Pipeline):
   def __init__(self, config):
     self.credentials = GoogleCredentials.get_application_default()
     self.service = build('genomics', 'v1alpha2', credentials=self.credentials)
     self.config = config
+
+  def make_exec_tool(self, spec, **kwargs):
+    return GCEPipelineTool(spec, self, **kwargs)
 
   def create_parameters(self, puts, replace=False):
     parameters = []
@@ -286,95 +369,15 @@ class GCEPipeline(Pipeline):
     return self.service.pipelines().run(body=body).execute()
     
   def funnel_to_pipeline(self, project_id, container, service_account, bucket, command, inputs, outputs, output_path, mount):
-    body = self.create_pipeline(project_id, container, service_account, bucket, command, inputs, outputs, output_path, mount)
+    body = self.create_task(project_id, container, service_account, bucket, command, inputs, outputs, output_path, mount)
     if DEBUG:
         pprint(body)
     
-    result = self.run_pipeline(body)
+    result = self.run_task(body)
     if DEBUG:
         pprint(result)
     
     return result
-
-class GCEPipelinePoll(PollThread):
-  def __init__(self, service, operation, outputs, callback, poll_interval=5):
-    super(GCEPipelinePoll, self, operation, poll_interval).__init__()
-    self.service = service
-    self.outputs = outputs
-    self.callback = callback
-
-  def poll(self):
-    return self.service.operations().get(name=self.operation['name']).execute()
-
-  def is_done(self, operation):
-    return operation['done']
-
-  def complete(self, operation):
-    self.callback(self.outputs)
-
-class GCEPipelineJob(object):
-  def __init__(self, spec, pipeline):
-    self.spec = spec
-    self.pipeline = pipeline
-    self.running = False
-    
-  def run(self, dry_run=False, pull_image=True, **kwargs):
-    id = self.spec['id']
-    mount = '/mnt/data'
-    if DEBUG:
-        pprint(self.spec)
-
-    input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
-    inputs = {input: self.builder.job[input]['path'] for input in input_ids}
-    
-    output_path = self.pipeline.config['output-path']
-    outputs = {output['id'].replace(id + '#', ''): output['outputBinding']['glob'] for output in self.spec['outputs']}
-
-    command_parts = self.spec['baseCommand'][:]
-    if 'arguments' in self.spec:
-      command_parts.extend(self.spec['arguments'])
-
-    for input in self.spec['inputs']:
-      input_id = input['id'].replace(id + '#', '')
-      path = mount + '/' + self.builder.job[input_id]['path'].replace('gs://', '')
-      command_parts.append(path)
-
-    command = string.join(command_parts, ' ')
-        
-    if self.spec['stdout']:
-      command += ' > ' + mount + '/' + self.spec['stdout']
-
-    operation = self.pipeline.funnel_to_pipeline(
-      self.pipeline.config['project-id'],
-      self.pipeline.config['container'],
-      self.pipeline.config['service-account'],
-      self.pipeline.config['bucket'],
-      command,
-      inputs,
-      outputs,
-      output_path,
-      mount
-    )
-    
-    collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
-    if DEBUG:
-        pprint(collected)
-
-    interval = math.ceil(random.random() * 5 + 5)
-    poll = GCEPipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
-    poll.start()
-
-class GCEPipelineTool(cwltool.draft2tool.CommandLineTool):
-  def __init__(self, spec, pipeline, **kwargs):
-    super(GCEPipelineTool, self).__init__(spec, **kwargs)
-    self.spec = spec
-    self.pipeline = pipeline
-    
-  def makeJobRunner(self):
-    return GCEPipelineJob(self.spec, self.pipeline)
-
-  def makePathMapper(self, reffiles, **kwargs):
-    return GCEPipelinePathMapper(reffiles, self.pipeline.config['bucket'], self.pipeline.config['output-path'])
 
 ################################################################################
 ##Task Execution System Code
