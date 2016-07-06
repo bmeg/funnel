@@ -18,10 +18,10 @@ import cwltool.draft2tool
 
 from pprint import pprint
 try:
-    from oauth2client.client import GoogleCredentials
-    from apiclient.discovery import build
+  from oauth2client.client import GoogleCredentials
+  from apiclient.discovery import build
 except ImportError:
-    pass
+  pass
 
 ####
 #GLOBALS
@@ -31,87 +31,121 @@ DEBUG=False
 BASE_MOUNT = "/mnt"
 DEFAULT_IMAGE = "ubuntu:15.04"
 
+class PollThread(threading.Thread):
+  def __init__(self, operation, poll_interval=5):
+    super(PipelinePoll, self).__init__()
+    self.operation = operation
+    self.poll_interval = poll_interval
+    self.success = None
+
+  def poll(self):
+    raise Exception("Not Implemented")
+
+  def is_done(self, operation):
+    raise Exception("Not Implemented")
+
+  def complete(self, operation):
+    raise Exception("Not Implemented")
+
+  def run(self):
+    while not self.is_done(self.operation):
+      time.sleep(self.poll_interval)
+      logging.debug('POLLING ' + operation['name'])
+      self.operation = self.poll()
+
+    if DEBUG:
+        pprint(self.operation)
+
+    self.success = self.operation
+    self.complete(self.operation)
+
+################################################################################
+## PathMappers
+################################################################################
+
+class GCEPathMapper(cwltool.pathmapper.PathMapper):
+  def __init__(self, referenced_files, bucket, output):
+    self._pathmap = {}
+    logging.debug("PATHMAPPER: " + output)
+    for src in referenced_files:
+      logging.debug(src)
+      if src.startswith('gs://'):
+        ab = src
+        iiib = src.split('/')[-1]
+        self._pathmap[iiib] = (iiib, ab)
+      else:
+        ab = 'gs://' + bucket + '/' + output + '/' + src
+        self._pathmap[src] = (ab, ab)
+
+      self._pathmap[ab] = (ab, ab)
+
+class LocalStorePathMapper(cwltool.pathmapper.PathMapper):
+  def __init__(self, referenced_files):
+    self._pathmap = {}
+    #logging.debug("PATHMAPPER: " + output)
+    for src in referenced_files:
+      logging.debug(src)
+      if src.startswith('gs://'):
+        ab = src
+        iiib = src.split('/')[-1]
+        self._pathmap[iiib] = (iiib, ab)
+      else:
+        #ab = 'gs://' + bucket + '/' + output + '/' + src
+        ab = src
+        self._pathmap[src] = (ab, ab)
+
+      self._pathmap[ab] = (ab, ab)
+
 ################################################################################
 #Base Funnel Classes
 ################################################################################
 
 class Pipeline(object):
+  def __init__(self, config):
+    self.config = config
     
-    def __init__(self, engine_args):
-        self.engine_args = engine_args
-    
-    def create_task(self, container, command, inputs, outputs, volumes, engine_args):
-        """
-        Given a cwl spec and job create a engine task and pass back data structure
-        to use for submission
-        """
-        raise Exception("Not Implemented")
-    
-    def run_task(self, task):
-        raise Exception("Not Implemented")
-    
-
-    def executor(self, tool, job_order, **kwargs):
-        if DEBUG:
-            pprint(kwargs)
-        jobs = tool.job(job_order, self.output_callback, **kwargs)
-
-        for runnable in jobs:
-          if runnable:
-            runnable.run(**kwargs)
-
-        logging.info('all processes have joined')
-        logging.info(self.output)
-
-        return self.output
-
-    def make_exec_tool(self, spec, **kwargs):
-        raise Exception("Not Implemented")
-
-    def make_tool(self, spec, **kwargs):
-        if 'class' in spec and spec['class'] == 'CommandLineTool':
-          return self.make_exec_tool(spec, **kwargs)
-        else:
-          return cwltool.workflow.defaultMakeTool(spec, **kwargs)
-
-    def output_callback(self, out, status):
-        if status == 'success':
-            logging.info('Job completed!')
-        else:
-            logging.info('Job failed...')
-        self.output = out
-
-class PipelineJob(threading.Thread):
-  def __init__(self, service, operation, outputs, callback, poll_interval=5):
+  def create_task(self, container, command, inputs, outputs, volumes, config):
     """
-    Args:
-      service : 
-      taskinst_id : 
-      
+    Given a cwl spec and job create a engine task and pass back data structure
+    to use for submission
     """
-    super(PipelinePoll, self).__init__()
-    self.service = service
-    self.operation = operation
-    self.poll_interval = poll_interval
-    self.outputs = outputs
-    self.callback = callback
-    self.success = None
-
-  def poll(self):
-      raise Exception("Not Implemented")
-
-  def run(self):
-    operation = self.operation
-    while not operation['done']:
-      time.sleep(self.poll_interval)
-      logging.debug('POLLING ' + operation['name'])
-      #operation = self.service.operations().get(name=operation['name']).execute()
-      operation = self.ping()
-
+    raise Exception("Not Implemented")
+    
+  def run_task(self, task):
+    raise Exception("Not Implemented")
+    
+  def executor(self, tool, job_order, **kwargs):
     if DEBUG:
-        pprint(operation)
-    self.success = operation
-    self.callback(self.outputs)
+      pprint(kwargs)
+    jobs = tool.job(job_order, self.output_callback, **kwargs)
+
+    for runnable in jobs:
+      if runnable:
+        runnable.run(**kwargs)
+      else:
+        time.sleep(1)
+
+    logging.info('all processes have joined')
+    logging.info(self.output)
+
+    return self.output
+
+  def make_exec_tool(self, spec, **kwargs):
+    raise Exception("Not Implemented")
+
+  def make_tool(self, spec, **kwargs):
+    if 'class' in spec and spec['class'] == 'CommandLineTool':
+      return self.make_exec_tool(spec, **kwargs)
+    else:
+      return cwltool.workflow.defaultMakeTool(spec, **kwargs)
+
+  def output_callback(self, out, status):
+    if status == 'success':
+      logging.info('Job completed!')
+    else:
+      logging.info('Job failed...')
+
+    self.output = out
 
 class PipelineJob(object):
   def __init__(self, spec, pipeline):
@@ -121,6 +155,10 @@ class PipelineJob(object):
     
   def run(self, dry_run=False, pull_image=True, **kwargs):
       raise Exception("Not Implemented")
+
+################################################################################
+## Command Line Tools
+################################################################################
 
 class CommandJob(cwltool.job.CommandLineJob):
   def __init__(self, spec):
@@ -136,7 +174,6 @@ class CommandJob(cwltool.job.CommandLineJob):
 
     thread = threading.Thread(target=runnnn, args=(this, kwargs))
     thread.start()
-
 
 class CommandTool(cwltool.draft2tool.CommandLineTool):
   def __init__(self, spec, **kwargs):
@@ -155,16 +192,22 @@ class CommandTool(cwltool.draft2tool.CommandLineTool):
       return cwltool.pathmapper.DockerPathMapper(reffiles, kwargs['basedir'])
     return cwltool.pathmapper.PathMapper(reffiles, kwargs['basedir'])
 
+class CommandPipeline(Pipeline):
+  def __init__(self, config):
+    super(CommandPipeline, self).__init__(config)
 
+  def make_exec_tool(self, spec, **kwargs):
+    return CommandTool(spec, **kwargs)
 
 ################################################################################
 ## GCE Pipeline API Code
 ################################################################################
 
 class GCEPipeline(Pipeline):
-  def __init__(self, pipeline_args):
+  def __init__(self, config):
     self.credentials = GoogleCredentials.get_application_default()
     self.service = build('genomics', 'v1alpha2', credentials=self.credentials)
+    self.config = config
 
   def create_parameters(self, puts, replace=False):
     parameters = []
@@ -189,7 +232,7 @@ class GCEPipeline(Pipeline):
     command = ['/mnt/data/' + parameter['localCopy']['path'] for parameter in input_parameters]
     return string.join(command, ' ')
 
-  def create_pipeline(self, project_id, container, service_account, bucket, command, inputs, outputs, output_path, mount):
+  def create_task(self, project_id, container, service_account, bucket, command, inputs, outputs, output_path, mount):
     input_parameters = self.create_parameters(inputs, True)
     output_parameters = self.create_parameters(outputs)
     
@@ -239,7 +282,7 @@ class GCEPipeline(Pipeline):
     
     return create_body
     
-  def run_pipeline(self, body):
+  def run_task(self, body):
     return self.service.pipelines().run(body=body).execute()
     
   def funnel_to_pipeline(self, project_id, container, service_account, bucket, command, inputs, outputs, output_path, mount):
@@ -253,12 +296,26 @@ class GCEPipeline(Pipeline):
     
     return result
 
+class GCEPipelinePoll(PollThread):
+  def __init__(self, service, operation, outputs, callback, poll_interval=5):
+    super(GCEPipelinePoll, self, operation, poll_interval).__init__()
+    self.service = service
+    self.outputs = outputs
+    self.callback = callback
+
+  def poll(self):
+    return self.service.operations().get(name=self.operation['name']).execute()
+
+  def is_done(self, operation):
+    return operation['done']
+
+  def complete(self, operation):
+    self.callback(self.outputs)
 
 class GCEPipelineJob(object):
-  def __init__(self, spec, pipeline, pipeline_args):
+  def __init__(self, spec, pipeline):
     self.spec = spec
     self.pipeline = pipeline
-    self.pipeline_args = pipeline_args
     self.running = False
     
   def run(self, dry_run=False, pull_image=True, **kwargs):
@@ -270,7 +327,7 @@ class GCEPipelineJob(object):
     input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
     inputs = {input: self.builder.job[input]['path'] for input in input_ids}
     
-    output_path = self.pipeline_args['output-path']
+    output_path = self.pipeline.config['output-path']
     outputs = {output['id'].replace(id + '#', ''): output['outputBinding']['glob'] for output in self.spec['outputs']}
 
     command_parts = self.spec['baseCommand'][:]
@@ -288,10 +345,10 @@ class GCEPipelineJob(object):
       command += ' > ' + mount + '/' + self.spec['stdout']
 
     operation = self.pipeline.funnel_to_pipeline(
-      self.pipeline_args['project-id'],
-      self.pipeline_args['container'],
-      self.pipeline_args['service-account'],
-      self.pipeline_args['bucket'],
+      self.pipeline.config['project-id'],
+      self.pipeline.config['container'],
+      self.pipeline.config['service-account'],
+      self.pipeline.config['bucket'],
       command,
       inputs,
       outputs,
@@ -304,56 +361,50 @@ class GCEPipelineJob(object):
         pprint(collected)
 
     interval = math.ceil(random.random() * 5 + 5)
-    poll = PipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
+    poll = GCEPipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
     poll.start()
 
-
-
 class GCEPipelineTool(cwltool.draft2tool.CommandLineTool):
-  def __init__(self, spec, pipeline, pipeline_args, **kwargs):
+  def __init__(self, spec, pipeline, **kwargs):
     super(GCEPipelineTool, self).__init__(spec, **kwargs)
     self.spec = spec
     self.pipeline = pipeline
-    self.pipeline_args = pipeline_args
     
   def makeJobRunner(self):
-    return PipelineJob(self.spec, self.pipeline, self.pipeline_args)
+    return GCEPipelineJob(self.spec, self.pipeline)
 
   def makePathMapper(self, reffiles, **kwargs):
-    return PipelinePathMapper(reffiles, self.pipeline_args['bucket'], self.pipeline_args['output-path'])
-
+    return GCEPipelinePathMapper(reffiles, self.pipeline.config['bucket'], self.pipeline.config['output-path'])
 
 ################################################################################
 ##Task Execution System Code
 ################################################################################
 
 class TESPipeline(Pipeline):
-    def __init__(self, engine_args):
-        self.engine_args = engine_args
-
-    def create_task(self, 
-        command, inputs, outputs, volumes, stdout, stderr ):
-        raise Exception("FIX ME!!!!!!")
+  def __init__(self, config):
+    self.config = config
+    
+  def create_task(self, command, inputs, outputs, volumes, stdout, stderr):
+    raise Exception("FIX ME!!!!!!")
 
 class TESPipelineTool(cwltool.draft2tool.CommandLineTool):
-  def __init__(self, spec, pipeline, pipeline_args, **kwargs):
+  def __init__(self, spec, pipeline, config, **kwargs):
     super(TESPipelineTool, self).__init__(spec, **kwargs)
     self.spec = spec
     self.pipeline = pipeline
-    self.pipeline_args = pipeline_args
+    self.config = config
   
   def makeJobRunner(self):
-    return TESPipelineJob(self.spec, self.pipeline, self.pipeline_args)
+    return TESPipelineJob(self.spec, self.pipeline, self.config)
 
   def makePathMapper(self, reffiles, **kwargs):
     return TESPipelinePathMapper(reffiles)
 
-
 class TESPipelineJob(object):
-  def __init__(self, spec, pipeline, pipeline_args):
+  def __init__(self, spec, pipeline, config):
     self.spec = spec
     self.pipeline = pipeline
-    self.pipeline_args = pipeline_args
+    self.config = config
     self.running = False
     
   def run(self, dry_run=False, pull_image=True, **kwargs):
@@ -367,7 +418,7 @@ class TESPipelineJob(object):
     input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
     inputs = {input: self.builder.job[input]['path'] for input in input_ids}
     
-    output_path = self.pipeline_args['output-path']
+    output_path = self.config['output-path']
     outputs = {output['id'].replace(id + '#', ''): output['outputBinding']['glob'] for output in self.spec['outputs']}
 
     command_parts = self.spec['baseCommand'][:]
@@ -388,7 +439,7 @@ class TESPipelineJob(object):
          container = i.get("dockerPull", DEFAULT_IMAGE)
 
     operation = self.pipeline.funnel_to_pipeline(
-      self.pipeline_args.get('project-id', ""),
+      self.config.get('project-id', ""),
       container=container,
       command=command_parts,
       inputs=inputs,
@@ -407,66 +458,27 @@ class TESPipelineJob(object):
     poll = PipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
     poll.start()
 
-
 ################################################################################
-## PathMappers
+## MAIN
 ################################################################################
-
-
-class GCEPathMapper(cwltool.pathmapper.PathMapper):
-  def __init__(self, referenced_files, bucket, output):
-    self._pathmap = {}
-    logging.debug("PATHMAPPER: " + output)
-    for src in referenced_files:
-      logging.debug(src)
-      if src.startswith('gs://'):
-        ab = src
-        iiib = src.split('/')[-1]
-        self._pathmap[iiib] = (iiib, ab)
-      else:
-        ab = 'gs://' + bucket + '/' + output + '/' + src
-        self._pathmap[src] = (ab, ab)
-
-      self._pathmap[ab] = (ab, ab)
-
-
-class LocalStorePathMapper(cwltool.pathmapper.PathMapper):
-  def __init__(self, referenced_files):
-    self._pathmap = {}
-    #logging.debug("PATHMAPPER: " + output)
-    for src in referenced_files:
-      logging.debug(src)
-      if src.startswith('gs://'):
-        ab = src
-        iiib = src.split('/')[-1]
-        self._pathmap[iiib] = (iiib, ab)
-      else:
-        #ab = 'gs://' + bucket + '/' + output + '/' + src
-        ab = src
-        self._pathmap[src] = (ab, ab)
-
-      self._pathmap[ab] = (ab, ab)
-
 
 def main(args):
-    
     parser = arg_parser()
     newargs = parser.parse_args(args)
   
     if newargs.gce is not None:
-        with open(newargs.gce) as handle:
-            pipeline_args = yaml.load(handle.read())
-        pipeline = GCEPipeline(pipeline_args)
+      with open(newargs.gce) as handle:
+        config = yaml.load(handle.read())
+        pipeline = GCEPipeline(config)
     elif newargs.tes is not None:
-        with open(newargs.tes) as handle:
-            pipeline_args = yaml.load(handle.read())
-        pipeline = TESPipeline(pipeline_args)
+      with open(newargs.tes) as handle:
+        config = yaml.load(handle.read())
+        pipeline = TESPipeline(config)
     else:
-        pipeline = LocalPipeline()
-        pipeline_args = {}
-  
-    cwltool.main.main(args=newargs, executor=pipeline.executor, makeTool=pipeline.make_tool)
+      config = {}
+      pipeline = CommandPipeline(config)
 
+    cwltool.main.main(args=newargs, executor=pipeline.executor, makeTool=pipeline.make_tool)
 
 def arg_parser():  # type: () -> argparse.ArgumentParser
     parser = argparse.ArgumentParser(description='Arvados executor for Common Workflow Language')
