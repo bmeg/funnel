@@ -178,6 +178,14 @@ class PipelineJob(object):
     self.pipeline = pipeline
     self.running = False
     
+  def find_docker_requirement(self):
+    container=DEFAULT_IMAGE
+    for i in self.spec.get("requirements", []) + self.spec.get("hints", []):
+      if i.get("class", "NA") == "DockerRequirement":
+        container = i.get("dockerPull", DEFAULT_IMAGE)
+
+    return container
+
   def run(self, dry_run=False, pull_image=True, **kwargs):
       raise Exception("PipelineJob.run() not implemented")
 
@@ -252,9 +260,11 @@ class GCEPipelineJob(object):
     
   def run(self, dry_run=False, pull_image=True, **kwargs):
     id = self.spec['id']
-    mount = '/mnt/data'
+    mount = self.pipeline.config.get('mount-point', BASE_MOUNT)
     if DEBUG:
-        pprint(self.spec)
+      pprint(self.spec)
+
+    container = self.find_docker_requirement()
 
     input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
     inputs = {input: self.builder.job[input]['path'] for input in input_ids}
@@ -278,7 +288,7 @@ class GCEPipelineJob(object):
 
     operation = self.pipeline.funnel_to_pipeline(
       self.pipeline.config['project-id'],
-      self.pipeline.config['container'],
+      container,
       self.pipeline.config['service-account'],
       self.pipeline.config['bucket'],
       command,
@@ -290,7 +300,7 @@ class GCEPipelineJob(object):
     
     collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
     if DEBUG:
-        pprint(collected)
+      pprint(collected)
 
     interval = math.ceil(random.random() * 5 + 5)
     poll = GCEPipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
@@ -352,7 +362,7 @@ class GCEPipeline(Pipeline):
         
         'docker' : {
           'cmd': command,
-          'imageName': 'gcr.io/' + project_id + '/' + container
+          'imageName': container # 'gcr.io/' + project_id + '/' + container
         },
         
         'inputParameters' : input_parameters,
@@ -376,7 +386,7 @@ class GCEPipeline(Pipeline):
         'outputs': {output: 'gs://' + bucket + '/' + output_path + '/' + outputs[output] for output in outputs},
         
         'logging': {
-          'gcsPath': 'gs://' + bucket + '/' + project_id + '/' + container + '/logging'
+          'gcsPath': 'gs://' + bucket + '/' + project_id + '/logging'
         },
         
         'projectId': project_id,
@@ -513,10 +523,12 @@ class TESPipelineJob(PipelineJob):
     stdout=self.spec.get('stdout', None)
     stderr=self.spec.get('stderr', None)
     
-    container=DEFAULT_IMAGE
-    for i in self.spec.get("requirements", []) + self.spec.get("hints", []):
-      if i.get("class", "NA") == "DockerRequirement":
-         container = i.get("dockerPull", DEFAULT_IMAGE)
+    container = self.find_docker_requirement()
+    # container=DEFAULT_IMAGE
+    # for i in self.spec.get("requirements", []) + self.spec.get("hints", []):
+    #   if i.get("class", "NA") == "DockerRequirement":
+    #      container = i.get("dockerPull", DEFAULT_IMAGE)
+
     if DEBUG:
         print self.pathmapper
     task = self.pipeline.create_task(
@@ -561,7 +573,7 @@ class TESPipelinePoll(PollThread):
     return self.service.get_job(self.operation['jobId'])
 
   def is_done(self, operation):
-      return operation['state'] in ['Complete', 'Error']
+    return operation['state'] in ['Complete', 'Error']
 
   def complete(self, operation):
     self.callback(self.outputs)
