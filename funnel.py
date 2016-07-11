@@ -38,10 +38,10 @@ BASE_MOUNT = "/mnt"
 DEFAULT_IMAGE = "ubuntu:15.04"
 
 class PollThread(threading.Thread):
-  def __init__(self, operation):
+  def __init__(self, operation, poll_interval=1):
     super(PollThread, self).__init__()
     self.operation = operation
-    self.poll_interval = 1
+    self.poll_interval = poll_interval
     self.success = None
 
   def poll(self):
@@ -252,10 +252,9 @@ class GCEPipelinePoll(PollThread):
   def complete(self, operation):
     self.callback(self.outputs)
 
-class GCEPipelineJob(object):
+class GCEPipelineJob(PipelineJob):
   def __init__(self, spec, pipeline):
-    self.spec = spec
-    self.pipeline = pipeline
+    super(GCEPipelineJob, self).__init__(spec, pipeline)
     self.running = False
     
   def run(self, dry_run=False, pull_image=True, **kwargs):
@@ -286,7 +285,7 @@ class GCEPipelineJob(object):
     if self.spec['stdout']:
       command += ' > ' + mount + '/' + self.spec['stdout']
 
-    operation = self.pipeline.funnel_to_pipeline(
+    task = self.pipeline.create_task(
       self.pipeline.config['project-id'],
       container,
       self.pipeline.config['service-account'],
@@ -298,6 +297,7 @@ class GCEPipelineJob(object):
       mount
     )
     
+    operation = self.pipeline.run_task(task)
     collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
     if DEBUG:
       pprint(collected)
@@ -320,9 +320,9 @@ class GCEPipelineTool(cwltool.draft2tool.CommandLineTool):
 
 class GCEPipeline(Pipeline):
   def __init__(self, config):
+    super(GCEPipeline, self).__init__(config)
     self.credentials = GoogleCredentials.get_application_default()
     self.service = build('genomics', 'v1alpha2', credentials=self.credentials)
-    self.config = config
 
   def make_exec_tool(self, spec, **kwargs):
     return GCEPipelineTool(spec, self, **kwargs)
