@@ -6,6 +6,10 @@ class: CommandLineTool
 
 description: "hash input through md5"
 
+hints:
+  - class: DockerRequirement
+    dockerPull: bmeg/openssl
+
 inputs:
   - id: input
     type: File
