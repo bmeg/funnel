@@ -524,10 +524,6 @@ class TESPipelineJob(PipelineJob):
     stderr=self.spec.get('stderr', None)
     
     container = self.find_docker_requirement()
-    # container=DEFAULT_IMAGE
-    # for i in self.spec.get("requirements", []) + self.spec.get("hints", []):
-    #   if i.get("class", "NA") == "DockerRequirement":
-    #      container = i.get("dockerPull", DEFAULT_IMAGE)
 
     if DEBUG:
         print self.pathmapper
