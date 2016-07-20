@@ -58,14 +58,14 @@ class PollThread(threading.Thread):
       time.sleep(self.poll_interval)
       #slow down polling over time till it hits a max
       if self.poll_interval < 30:
-          self.poll_interval += 1
+        self.poll_interval += 1
       if DEBUG:
-          print self.operation
-          print('POLLING ' + self.operation['jobId'])
+        print self.operation
+        print('POLLING ' + self.operation['jobId'])
       self.operation = self.poll()
 
     if DEBUG:
-        pprint(self.operation)
+      pprint(self.operation)
 
     self.success = self.operation
     self.complete(self.operation)
@@ -93,7 +93,6 @@ class GCEPathMapper(cwltool.pathmapper.PathMapper):
 class LocalStorePathMapper(cwltool.pathmapper.PathMapper):
   def __init__(self, referenced_files, basedir, store_base, **kwargs):
     self.store_base = store_base
-    self.store_base = store_base
     self.setup(referenced_files, basedir)
 
   def setup(self, referenced_files, basedir):
@@ -101,19 +100,19 @@ class LocalStorePathMapper(cwltool.pathmapper.PathMapper):
     for src in referenced_files:
       logging.debug(src)
       if DEBUG:
-          print "pathing", src
+        print "pathing", src
       if src.startswith("fs://"):
-          self._pathmap[src] = (src, src)
+        self._pathmap[src] = (src, src)
       else:
-          logging.debug("Copying %s to shared %s" % (src, self.store_base))
-          dst = os.path.join(self.store_base, os.path.basename(src))
-          shutil.copy(src, dst)
-          i = "fs://%s" % (os.path.basename(src))
-          self._pathmap[src] = (i, os.path.join(BASE_MOUNT, src))
+        logging.debug("Copying %s to shared %s" % (src, self.store_base))
+        dst = os.path.join(self.store_base, os.path.basename(src))
+        shutil.copy(src, dst)
+        i = "fs://%s" % (os.path.basename(src))
+        self._pathmap[src] = (i, os.path.join(BASE_MOUNT, src))
 
 
 ################################################################################
-#Base Funnel Classes
+## Base Funnel Classes
 ################################################################################
 
 class Pipeline(object):
@@ -141,6 +140,7 @@ class Pipeline(object):
         runnable.run(**kwargs)
       else:
         time.sleep(1)
+
     self.wait()
     logging.info('all processes have joined')
     logging.info(self.output)
@@ -157,11 +157,11 @@ class Pipeline(object):
       return cwltool.workflow.defaultMakeTool(spec, **kwargs)
 
   def add_thread(self, thread):
-      self.threads.append(thread)
+    self.threads.append(thread)
 
   def wait(self):
-      for i in self.threads:
-          i.join()
+    for i in self.threads:
+      i.join()
 
   def output_callback(self, out, status):
     if status == 'success':
@@ -169,7 +169,7 @@ class Pipeline(object):
     else:
       logging.info('Job failed...')
     if DEBUG:
-        print "job done", out, status
+      print "job done", out, status
     self.output = out
 
 class PipelineJob(object):
@@ -187,7 +187,7 @@ class PipelineJob(object):
     return container
 
   def run(self, dry_run=False, pull_image=True, **kwargs):
-      raise Exception("PipelineJob.run() not implemented")
+    raise Exception("PipelineJob.run() not implemented")
 
 ################################################################################
 ## Command Line Tools
@@ -409,24 +409,23 @@ class GCEPipeline(Pipeline):
 ################################################################################
 
 class TESService:
-    def __init__(self, addr):
-        self.addr = addr
+  def __init__(self, addr):
+    self.addr = addr
 
-    def submit(self, task):
-        r = requests.post("%s/v1/jobs" % (self.addr), json=task)
-        data = r.json()
-        if 'Error' in data:
-            raise Exception("Request Error: %s" % (data['Error']) )
-        return data['value']
+  def submit(self, task):
+    r = requests.post("%s/v1/jobs" % (self.addr), json=task)
+    data = r.json()
+    if 'Error' in data:
+      raise Exception("Request Error: %s" % (data['Error']) )
+    return data['value']
 
-    def get_job(self, job_id):
-        r = requests.get("%s/v1/jobs/%s" % (self.addr, job_id))
-        return r.json()
+  def get_job(self, job_id):
+    r = requests.get("%s/v1/jobs/%s" % (self.addr, job_id))
+    return r.json()
 
-    def get_server_metadata(self):
-        r = requests.get("%s/v1/jobs-service" % (self.addr))
-        return r.json()
-
+  def get_server_metadata(self):
+    r = requests.get("%s/v1/jobs-service" % (self.addr))
+    return r.json()
 
 class TESPipeline(Pipeline):
   def __init__(self, config):
@@ -434,48 +433,48 @@ class TESPipeline(Pipeline):
     self.service = TESService(config['url'])
 
   def create_parameters(self, puts, pathmapper):
-      parameters = []
-      if DEBUG:
-          print "pathmap", puts, pathmapper._pathmap
-      for put in puts:
-        path = puts[put]
-        rev = pathmapper.reversemap(path)
-        if rev is not None:
-            parameter = {
-              'name': put,
-              'description': put,
-              'location' : rev[1],
-              'path': path
-            }
-            parameters.append(parameter)
+    parameters = []
+    if DEBUG:
+      print "pathmap", puts, pathmapper._pathmap
+    for put in puts:
+      path = puts[put]
+      rev = pathmapper.reversemap(path)
+      if rev is not None:
+        parameter = {
+          'name': put,
+          'description': put,
+          'location' : rev[1],
+          'path': path
+        }
+        parameters.append(parameter)
 
-      return parameters
+    return parameters
 
   def create_task(self, container, command, inputs, outputs, volumes, config, pathmapper, stdout=None, stderr=None):
-      input_parameters = self.create_parameters(inputs, pathmapper)
-      output_parameters = self.create_parameters(outputs, pathmapper)
+    input_parameters = self.create_parameters(inputs, pathmapper)
+    output_parameters = self.create_parameters(outputs, pathmapper)
 
-      create_body = {
-        'projectId': "test",
-        'name': 'funnel workflow',
-        'description': 'CWL TES task',
-        'docker' : [{
-            'cmd': command,
-            'imageName': container
-         }],
-         'inputs' : input_parameters,
-         'outputs' : output_parameters,
-         'resources' : {
-            'volumes': [{
-              'name': 'data',
-              'mountPoint': BASE_MOUNT,
-              'sizeGb': 10,
-            }],
-            'minimumCpuCores': 1,
-            'minimumRamGb': 1,
-         }
+    create_body = {
+      'projectId': "test",
+      'name': 'funnel workflow',
+      'description': 'CWL TES task',
+      'docker' : [{
+        'cmd': command,
+        'imageName': container
+      }],
+      'inputs' : input_parameters,
+      'outputs' : output_parameters,
+      'resources' : {
+        'volumes': [{
+          'name': 'data',
+          'mountPoint': BASE_MOUNT,
+          'sizeGb': 10,
+        }],
+        'minimumCpuCores': 1,
+        'minimumRamGb': 1,
       }
-      return create_body
+    }
+    return create_body
 
   def make_exec_tool(self, spec, **kwargs):
     return TESPipelineTool(spec, self, **kwargs)
@@ -492,7 +491,7 @@ class TESPipelineTool(cwltool.draft2tool.CommandLineTool):
   def makePathMapper(self, reffiles, **kwargs):
     m = self.pipeline.service.get_server_metadata()
     if m['metadata'].get('storageType', "") == "sharedFile":
-        return LocalStorePathMapper(reffiles, store_base=m['metadata']['baseDir'], **kwargs)
+      return LocalStorePathMapper(reffiles, store_base=m['metadata']['baseDir'], **kwargs)
 
 class TESPipelineJob(PipelineJob):
   def __init__(self, spec, pipeline):
@@ -503,7 +502,7 @@ class TESPipelineJob(PipelineJob):
     id = self.spec['id']
 
     if DEBUG:
-        pprint(self.spec)
+      pprint(self.spec)
 
     input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
     inputs = {input: self.builder.job[input]['path'] for input in input_ids}
@@ -526,7 +525,7 @@ class TESPipelineJob(PipelineJob):
     container = self.find_docker_requirement()
 
     if DEBUG:
-        print self.pathmapper
+      print self.pathmapper
     task = self.pipeline.create_task(
       container=container,
       command=command_parts,
@@ -542,17 +541,17 @@ class TESPipelineJob(PipelineJob):
     task = self.pipeline.service.submit(task)
     operation = self.pipeline.service.get_job(task)
     if DEBUG:
-        print "op", operation
+      print "op", operation
     collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
     if DEBUG:
-        pprint(collected)
+      pprint(collected)
 
     interval = math.ceil(random.random() * 5 + 5)
     poll = TESPipelinePoll(
-        service=self.pipeline.service,
-        operation=operation,
-        outputs=collected,
-        callback=lambda outputs: self.output_callback(outputs, 'success')
+      service=self.pipeline.service,
+      operation=operation,
+      outputs=collected,
+      callback=lambda outputs: self.output_callback(outputs, 'success')
     )
     self.pipeline.add_thread(poll)
     poll.start()
