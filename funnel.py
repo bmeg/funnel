@@ -16,7 +16,7 @@ import cwltool.docker
 import cwltool.process
 import cwltool.workflow
 import cwltool.draft2tool
-
+from cwltool.pathmapper import MapperEnt
 from pprint import pprint
 try:
     from oauth2client.client import GoogleCredentials
@@ -101,14 +101,27 @@ class LocalStorePathMapper(cwltool.pathmapper.PathMapper):
             logging.debug(src)
             if DEBUG:
                 print "pathing", src
-            if src.startswith("fs://"):
-                self._pathmap[src] = (src, src)
+            if src['location'].startswith("fs://"):
+                target_name = os.path.basename(src['location'])
+                self._pathmap[src['location']] = MapperEnt(
+                    resolved=src['location'],
+                    target=os.path.join(BASE_MOUNT, target_name),
+                    type=src['class']
+                )
+            elif src['location'].startswith("file://"):
+                src_path = src['location'][7:]
+                logging.debug("Copying %s to shared %s" % (src['location'], self.store_base))
+                dst = os.path.join(self.store_base, os.path.basename(src_path))
+                print src_path
+                shutil.copy(src_path, dst)
+                location = "fs://%s" % (os.path.basename(src['location']))
+                self._pathmap[src['location']] = MapperEnt(
+                    resolved=location,
+                    target=os.path.join(BASE_MOUNT, os.path.basename(src['location'])),
+                    type=src['class']
+                )
             else:
-                logging.debug("Copying %s to shared %s" % (src, self.store_base))
-                dst = os.path.join(self.store_base, os.path.basename(src))
-                shutil.copy(src, dst)
-                i = "fs://%s" % (os.path.basename(src))
-                self._pathmap[src] = (i, os.path.join(BASE_MOUNT, src))
+                raise Exception("Unknown file source: %s" %(src['location']))
 
 
 ################################################################################
@@ -216,7 +229,7 @@ class CommandTool(cwltool.draft2tool.CommandLineTool):
     def makeJobRunner(self):
         return CommandJob(self.spec)
 
-    def makePathMapper(self, reffiles, **kwargs):
+    def makePathMapper(self, reffiles, stagedir, **kwargs):
         useDocker = False
         for i in self.spec.get("requirements", []) + self.spec.get("hints", []):
             if i.get("class", "NA") == "DockerRequirement":
@@ -315,7 +328,7 @@ class GCEPipelineTool(cwltool.draft2tool.CommandLineTool):
     def makeJobRunner(self):
         return GCEPipelineJob(self.spec, self.pipeline)
 
-    def makePathMapper(self, reffiles, **kwargs):
+    def makePathMapper(self, reffiles, stagedir, **kwargs):
         return GCEPathMapper(reffiles, self.pipeline.config['bucket'], self.pipeline.config['output-path'])
 
 class GCEPipeline(Pipeline):
@@ -472,6 +485,7 @@ class TESPipeline(Pipeline):
                 }],
                 'minimumCpuCores': 1,
                 'minimumRamGb': 1,
+            }
         }
             
         if stdout is not None:
@@ -509,7 +523,8 @@ class TESPipelineTool(cwltool.draft2tool.CommandLineTool):
     def makeJobRunner(self):
         return TESPipelineJob(self.spec, self.pipeline)
 
-    def makePathMapper(self, reffiles, **kwargs):
+    def makePathMapper(self, reffiles, stagedir, **kwargs):
+        print "Making pathmapper", reffiles, stagedir
         m = self.pipeline.service.get_server_metadata()
         if m['metadata'].get('storageType', "") == "sharedFile":
             return LocalStorePathMapper(reffiles, store_base=m['metadata']['baseDir'], **kwargs)
@@ -576,7 +591,7 @@ class TESPipelineJob(PipelineJob):
         operation = self.pipeline.service.get_job(task)
         if DEBUG:
             print "op", operation
-        collected = {output: {'path': "fs://output/" + outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
+        collected = {output: {'location': "fs://output/" + outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
         if DEBUG:
             pprint(collected)
 
