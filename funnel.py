@@ -32,7 +32,7 @@ except ImportError:
 ####
 #GLOBALS
 ####
-DEBUG=False
+DEBUG=True
 
 BASE_MOUNT = "/mnt"
 DEFAULT_IMAGE = "ubuntu:15.04"
@@ -475,6 +475,28 @@ class TESPipeline(Pipeline):
             'minimumRamGb': 1,
          }
       }
+      
+      if stdout is not None:
+          create_body['docker'][0]['stdout'] = stdout[0]
+          parameter = {
+            'name': 'stdout',
+            'description': 'tool stdout',
+            'location' : stdout[1],
+            'path': stdout[0]
+          }
+          create_body['outputs'].append(parameter)
+          
+      if stderr is not None:
+          create_body['docker'][0]['stderr'] = stderr[0]
+          parameter = {
+            'name': 'stderr',
+            'description': 'tool stderr',
+            'location' : stderr[1],
+            'path': stderr[0]
+          }
+          create_body['outputs'].append(parameter)
+
+      print "task", create_body
       return create_body
 
   def make_exec_tool(self, spec, **kwargs):
@@ -503,7 +525,10 @@ class TESPipelineJob(PipelineJob):
     id = self.spec['id']
 
     if DEBUG:
+        print "run spec",
         pprint(self.spec)
+        print "run kwargs",
+        pprint(kwargs)
 
     input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
     inputs = {input: self.builder.job[input]['path'] for input in input_ids}
@@ -520,8 +545,18 @@ class TESPipelineJob(PipelineJob):
       path = os.path.join( self.builder.job[input_id]['path'] )
       command_parts.append(path)
     
-    stdout=self.spec.get('stdout', None)
-    stderr=self.spec.get('stderr', None)
+    
+    stdout_path=self.spec.get('stdout', None)
+    stderr_path=self.spec.get('stderr', None)
+    
+    if stdout_path is not None:
+        stdout = (self.output2path(stdout_path), self.output2location(stdout_path))
+    else:
+        stdout = None
+    if stderr_path is not None:
+        stderr = (self.output2path(stderr_path), self.output2location(stderr_path))
+    else:
+        stderr = None
     
     container = self.find_docker_requirement()
 
@@ -543,11 +578,10 @@ class TESPipelineJob(PipelineJob):
     operation = self.pipeline.service.get_job(task)
     if DEBUG:
         print "op", operation
-    collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
+    collected = {output: {'path': "fs://output/" + outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
     if DEBUG:
         pprint(collected)
 
-    interval = math.ceil(random.random() * 5 + 5)
     poll = TESPipelinePoll(
         service=self.pipeline.service,
         operation=operation,
@@ -556,6 +590,12 @@ class TESPipelineJob(PipelineJob):
     )
     self.pipeline.add_thread(poll)
     poll.start()
+  
+  def output2location(self, path):
+    return "fs://output/" + os.path.basename(path)
+    
+  def output2path(self, path):
+    return "/mnt/" + path  
 
 
 class TESPipelinePoll(PollThread):
