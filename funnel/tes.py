@@ -25,8 +25,6 @@ class LocalStorePathMapper(cwltool.pathmapper.PathMapper):
         self._pathmap = {}
         for src in referenced_files:
             logging.debug(src)
-            if DEBUG:
-                print "pathing", src
             if src['location'].startswith("fs://"):
                 target_name = os.path.basename(src['location'])
                 self._pathmap[src['location']] = MapperEnt(
@@ -75,8 +73,6 @@ class TESPipeline(Pipeline):
 
     def create_parameters(self, puts, pathmapper):
         parameters = []
-        if DEBUG:
-            print "pathmap", puts, pathmapper._pathmap
         for put in puts:
             path = puts[put]
             rev = pathmapper.reversemap(path)
@@ -154,8 +150,8 @@ class TESPipelineTool(cwltool.draft2tool.CommandLineTool):
     def makePathMapper(self, reffiles, stagedir, **kwargs):
         print "Making pathmapper", reffiles, stagedir
         m = self.pipeline.service.get_server_metadata()
-        if m['metadata'].get('storageType', "") == "sharedFile":
-            return LocalStorePathMapper(reffiles, store_base=m['metadata']['baseDir'], **kwargs)
+        if m['storageConfig'].get('storageType', "") == "sharedFile":
+            return LocalStorePathMapper(reffiles, store_base=m['storageConfig']['baseDir'], **kwargs)
 
 class TESPipelineJob(PipelineJob):
     def __init__(self, spec, pipeline):
@@ -164,11 +160,6 @@ class TESPipelineJob(PipelineJob):
         
     def run(self, dry_run=False, pull_image=True, **kwargs):
         id = self.spec['id']
-
-        log.debug("run spec",
-            self.spec,
-            "run kwargs",
-            kwargs)
 
         input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
         inputs = {input: self.builder.job[input]['path'] for input in input_ids}
