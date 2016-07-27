@@ -1,6 +1,7 @@
 import time
 import threading
 import logging
+from pprint import pformat
 
 log = logging.getLogger('funnel')
 
@@ -27,12 +28,11 @@ class PollThread(threading.Thread):
             if self.poll_interval < 30:
                 self.poll_interval += 1
 
-            log.debug(self.operation)
-            log.debug('POLLING ' + self.operation['jobId'])
+            log.debug('POLLING ' + pformat(self.operation))
 
             self.operation = self.poll()
 
-        log.debug(self.operation)
+        log.debug(pformat(self.operation))
 
         self.success = self.operation
         self.complete(self.operation)

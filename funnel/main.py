@@ -10,6 +10,12 @@ from command import CommandPipeline
 from gce import GCEPipeline
 from tes import TESPipeline
 
+log = logging.getLogger('funnel')
+log.setLevel(logging.DEBUG)
+console = logging.StreamHandler()
+console.setLevel(logging.DEBUG)
+log.addHandler(console)
+
 def main(args):
     parser = arg_parser()
     newargs = parser.parse_args(args)

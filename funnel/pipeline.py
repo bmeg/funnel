@@ -2,6 +2,8 @@ import time
 import logging
 import cwltool.workflow
 
+from cwltool.errors import WorkflowException
+
 log = logging.getLogger('funnel')
 DEFAULT_IMAGE = "ubuntu:15.04"
 
@@ -25,11 +27,17 @@ class Pipeline(object):
 
         jobs = tool.job(job_order, self.output_callback, **kwargs)
 
-        for runnable in jobs:
-            if runnable:
-                runnable.run(**kwargs)
-            else:
-                time.sleep(1)
+        try:
+            for runnable in jobs:
+                if runnable:
+                    runnable.run(**kwargs)
+                else:
+                    time.sleep(1)
+        except WorkflowException:
+            raise
+        except Exception as e:
+            log.exception('workflow error')
+            raise WorkflowException(unicode(e))
 
         self.wait()
         log.info('all processes have joined')

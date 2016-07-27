@@ -2,6 +2,7 @@ import math
 import random
 import string
 import logging
+from pprint import pformat
 
 import cwltool.draft2tool
 from cwltool.pathmapper import MapperEnt
@@ -17,21 +18,37 @@ try:
 except ImportError:
     pass
 
-BASE_MOUNT = "/mnt"
+BASE_MOUNT = "/mnt/data"
+
+def find_index(s, sub):
+    try:
+        return s.index(sub)
+    except:
+        None
+
+def extract_gs(s):
+    index = find_index(s, 'gs:/')
+    if index:
+        gs = s[index:]
+        return gs[:4] + '/' + gs[4:]
+    else:
+        return s
 
 class GCEPathMapper(cwltool.pathmapper.PathMapper):
     def __init__(self, referenced_files, bucket, output):
         self._pathmap = {}
-        log.debug("PATHMAPPER: " + output)
+        log.debug("PATHMAPPER: " + pformat(output))
         for src in referenced_files:
-            log.debug(src)
-            if src.startswith('gs://'):
-                ab = src
-                iiib = src.split('/')[-1]
-                self._pathmap[iiib] = (iiib, ab)
+            log.debug(pformat(src))
+            base = extract_gs(src['location'])
+
+            if base.startswith('gs://'):
+                ab = base
+                iiib = base.split('/')[-1]
+                self._pathmap[src['location']] = (iiib, ab)
             else:
-                ab = 'gs://' + bucket + '/' + output + '/' + src
-                self._pathmap[src] = (ab, ab)
+                ab = 'gs://' + bucket + '/' + output + '/' + base
+                self._pathmap[src['location']] = (ab, ab)
 
             self._pathmap[ab] = (ab, ab)
 
@@ -59,15 +76,17 @@ class GCEPipelineJob(PipelineJob):
     def run(self, dry_run=False, pull_image=True, **kwargs):
         id = self.spec['id']
         mount = self.pipeline.config.get('mount-point', BASE_MOUNT)
-        log.debug(self.spec)
+
+        log.debug(pformat(self.spec))
 
         container = self.find_docker_requirement()
-
         input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
         inputs = {input: self.builder.job[input]['path'] for input in input_ids}
         
         output_path = self.pipeline.config['output-path']
         outputs = {output['id'].replace(id + '#', ''): output['outputBinding']['glob'] for output in self.spec['outputs']}
+
+        log.debug(pformat(outputs))
 
         command_parts = self.spec['baseCommand'][:]
         if 'arguments' in self.spec:
@@ -97,7 +116,8 @@ class GCEPipelineJob(PipelineJob):
         
         operation = self.pipeline.run_task(task)
         collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
-        log.debug(collected)
+
+        log.debug(pformat(collected))
 
         interval = math.ceil(random.random() * 5 + 5)
         poll = GCEPipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
