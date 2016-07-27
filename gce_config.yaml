@@ -1,4 +1,8 @@
-project-id: machine-generated-837
-service-account: SOMENUMBER-compute@developer.gserviceaccount.com
-bucket: your-bucket
-output-path: path/to/where/you/want/google/pipeline/to/put/your/output
+project-id: level-elevator-714
+service-account : 985014667505-compute@developer.gserviceaccount.com
+bucket : hashsplitter
+output-path : output
+# project-id: machine-generated-837
+# service-account: SOMENUMBER-compute@developer.gserviceaccount.com
+# bucket: your-bucket
+# output-path: path/to/where/you/want/google/pipeline/to/put/your/output

@@ -25,10 +25,10 @@ class PollThread(threading.Thread):
         while not self.is_done(self.operation):
             time.sleep(self.poll_interval)
             #slow down polling over time till it hits a max
-            if self.poll_interval < 30:
-                self.poll_interval += 1
+            # if self.poll_interval < 30:
+            #     self.poll_interval += 1
 
-            log.debug('POLLING ' + pformat(self.operation))
+            log.debug('POLLING ' + pformat(self.operation['name']))
 
             self.operation = self.poll()
 

@@ -35,6 +35,14 @@ def extract_gs(s):
         return s
 
 class GCEPathMapper(cwltool.pathmapper.PathMapper):
+    # def __init__(self, referenced_files, bucket, output):
+    #     super(GCEPathMapper, self).__init__(referenced_files, )
+
+    # def setup(self, referenced_files, basedir):
+    #     log.debug("PATHMAPPER SETUP" + pformat(referenced_files))
+        
+
+
     def __init__(self, referenced_files, bucket, output):
         self._pathmap = {}
         log.debug("PATHMAPPER: " + pformat(output))
@@ -66,7 +74,7 @@ class GCEPipelinePoll(PollThread):
         return operation['done']
 
     def complete(self, operation):
-        self.callback(self.outputs)
+        self.callback(operation, self.outputs)
 
 class GCEPipelineJob(PipelineJob):
     def __init__(self, spec, pipeline):
@@ -77,6 +85,7 @@ class GCEPipelineJob(PipelineJob):
         id = self.spec['id']
         mount = self.pipeline.config.get('mount-point', BASE_MOUNT)
 
+        log.debug('SPEC ------------------')
         log.debug(pformat(self.spec))
 
         container = self.find_docker_requirement()
@@ -86,7 +95,7 @@ class GCEPipelineJob(PipelineJob):
         output_path = self.pipeline.config['output-path']
         outputs = {output['id'].replace(id + '#', ''): output['outputBinding']['glob'] for output in self.spec['outputs']}
 
-        log.debug(pformat(outputs))
+        log.debug('OUTPUTS ------------' + pformat(outputs))
 
         command_parts = self.spec['baseCommand'][:]
         if 'arguments' in self.spec:
@@ -115,12 +124,27 @@ class GCEPipelineJob(PipelineJob):
         )
         
         operation = self.pipeline.run_task(task)
-        collected = {output: {'path': outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
+        collected = {output: {
+            'path': outputs[output],
+            'class': 'File',
+            'hostfs': False
+        } for output in outputs}
 
-        log.debug(pformat(collected))
+        log.debug('COLLECTED OUTPUTS ------------------' + pformat(collected))
+
+        def callback(operation, outputs):
+            out = operation['metadata']['request']['pipelineArgs']['outputs']
+            for key in out:
+                path = out[key]
+                outputs[key]['location'] = path
+
+            log.debug('FINAL OUTPUT -----------------------------------')
+            log.debug(pformat(outputs))
+
+            self.output_callback(outputs, 'success')
 
         interval = math.ceil(random.random() * 5 + 5)
-        poll = GCEPipelinePoll(self.pipeline.service, operation, collected, lambda outputs: self.output_callback(outputs, 'success'), interval)
+        poll = GCEPipelinePoll(self.pipeline.service, operation, collected, callback, interval)
         poll.start()
 
 class GCEPipelineTool(cwltool.draft2tool.CommandLineTool):

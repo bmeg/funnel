@@ -1,6 +1,7 @@
 import time
 import logging
 import cwltool.workflow
+from pprint import pformat
 
 from cwltool.errors import WorkflowException
 
@@ -66,7 +67,7 @@ class Pipeline(object):
             log.info('Job completed!')
         else:
             log.info('Job failed...')
-        log.debug("job done", out, status)
+        log.debug("job done" + pformat(out) + status)
         self.output = out
 
 class PipelineJob(object):
