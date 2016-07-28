@@ -13,6 +13,9 @@ from gce_fsaccess import GCEFsAccess
 
 log = logging.getLogger('funnel')
 
+import httplib2shim
+httplib2shim.patch()
+
 try:
     from oauth2client.client import GoogleCredentials
     from apiclient.discovery import build
@@ -36,14 +39,6 @@ def extract_gs(s):
         return s
 
 class GCEPathMapper(cwltool.pathmapper.PathMapper):
-    # def __init__(self, referenced_files, bucket, output):
-    #     super(GCEPathMapper, self).__init__(referenced_files, )
-
-    # def setup(self, referenced_files, basedir):
-    #     log.debug("PATHMAPPER SETUP" + pformat(referenced_files))
-        
-
-
     def __init__(self, referenced_files, bucket, output):
         self._pathmap = {}
         log.debug("PATHMAPPER: " + pformat(output))
@@ -77,11 +72,53 @@ class GCEPipelinePoll(PollThread):
     def complete(self, operation):
         self.callback(operation, self.outputs)
 
+def dictify(lot):
+    return {k: v for k, v in lot}
+
+def input_binding(input, key, default):
+    position = default
+    if 'inputBinding' in input:
+        if key in input['inputBinding']:
+            position = input['inputBinding'][key]
+
+    return position
+
 class GCEPipelineJob(PipelineJob):
     def __init__(self, spec, pipeline):
         super(GCEPipelineJob, self).__init__(spec, pipeline)
         self.running = False
         
+    def render_input(self, input):
+        return (input, self.builder.job[input]['path'])
+
+    def render_output(self, id, output):
+        glob = output['outputBinding']['glob']
+        if output['type'] == 'File':
+            path = (output['id'].replace(id + '#', ''), glob)
+        elif output['type'] == 'Directory':
+            if glob == '.':
+                glob = '/'
+            elif not glob[-1] == '/':
+                glob = glob + '/'
+            path = (output['id'].replace(id + '#', ''), glob)
+        return path
+
+    def command_input(self, id, mount, input):
+        input_id = input['id'].replace(id + '#', '')
+        prefix = input_binding(input, 'prefix', None)
+        
+        if input['type'] == 'File':
+            path = mount + '/' + self.builder.job[input_id]['path'].replace('gs://', '')
+        elif input['type'].startswith('boolean'):
+            path = ''
+        else:
+            path = self.builder.job[input_id]
+
+        if prefix:
+            return prefix + ' ' + path
+        else:
+            return path
+
     def run(self, dry_run=False, pull_image=True, **kwargs):
         id = self.spec['id']
         mount = self.pipeline.config.get('mount-point', BASE_MOUNT)
@@ -89,12 +126,20 @@ class GCEPipelineJob(PipelineJob):
         log.debug('SPEC ------------------')
         log.debug(pformat(self.spec))
 
+        log.debug('COMMAND ----------------------')
+        log.debug(pformat(self.command_line))
+
         container = self.find_docker_requirement()
-        input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
-        inputs = {input: self.builder.job[input]['path'] for input in input_ids}
+
+        file_inputs = filter(lambda input: input['type'] == 'File', self.spec['inputs'])
+        input_ids = [input['id'].replace(id + '#', '') for input in file_inputs]
+        inputs = dictify([self.render_input(input) for input in input_ids])
+
+        sorted_inputs = self.spec['inputs'][:]
+        sorted_inputs.sort(key=lambda input: input_binding(input, 'position', 9999999))
         
         output_path = self.pipeline.config['output-path']
-        outputs = {output['id'].replace(id + '#', ''): output['outputBinding']['glob'] for output in self.spec['outputs']}
+        outputs = dictify([self.render_output(id, output) for output in self.spec['outputs']])
 
         log.debug('OUTPUTS ------------' + pformat(outputs))
 
@@ -102,14 +147,13 @@ class GCEPipelineJob(PipelineJob):
         if 'arguments' in self.spec:
             command_parts.extend(self.spec['arguments'])
 
-        for input in self.spec['inputs']:
-            input_id = input['id'].replace(id + '#', '')
-            path = mount + '/' + self.builder.job[input_id]['path'].replace('gs://', '')
+        for input in sorted_inputs:
+            path = self.command_input(id, mount, input)
             command_parts.append(path)
 
         command = string.join(command_parts, ' ')
                 
-        if self.spec['stdout']:
+        if 'stdout' in self.spec:
             command += ' > ' + mount + '/' + self.spec['stdout']
 
         task = self.pipeline.create_task(
@@ -124,6 +168,9 @@ class GCEPipelineJob(PipelineJob):
             mount
         )
         
+        log.debug('SUBMITTED TASK -----------------------------------')
+        log.debug(pformat(task))
+
         operation = self.pipeline.run_task(task)
         collected = {output: {
             'path': outputs[output],
@@ -208,7 +255,7 @@ class GCEPipeline(Pipeline):
                 
                 'docker' : {
                     'cmd': command,
-                    'imageName': container # 'gcr.io/' + project_id + '/' + container
+                    'imageName': container
                 },
                 
                 'inputParameters' : input_parameters,
@@ -219,11 +266,11 @@ class GCEPipeline(Pipeline):
                         'name': 'data',
                         'autoDelete': True,
                         'mountPoint': mount,
-                        'sizeGb': 10,
+                        'sizeGb': 150,
                         'type': 'PERSISTENT_HDD',
                     }],
                     'minimumCpuCores': 1,
-                    'minimumRamGb': 1,
+                    'minimumRamGb': 16,
                 }
             },
                 
