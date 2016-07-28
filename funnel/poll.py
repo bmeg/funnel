@@ -27,8 +27,7 @@ class PollThread(threading.Thread):
             #slow down polling over time till it hits a max
             # if self.poll_interval < 30:
             #     self.poll_interval += 1
-
-            log.debug('POLLING ' + pformat(self.operation['name']))
+            log.debug('POLLING ' + pformat(self.operation.get('name', self.operation.get('jobId', "NA"))))
 
             self.operation = self.poll()
 
