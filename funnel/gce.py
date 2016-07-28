@@ -9,6 +9,7 @@ from cwltool.pathmapper import MapperEnt
 
 from poll import PollThread
 from pipeline import Pipeline, PipelineJob
+from gce_fsaccess import GCEFsAccess
 
 log = logging.getLogger('funnel')
 
@@ -164,6 +165,10 @@ class GCEPipeline(Pipeline):
         super(GCEPipeline, self).__init__(config)
         self.credentials = GoogleCredentials.get_application_default()
         self.service = build('genomics', 'v1alpha2', credentials=self.credentials)
+
+    def configure(self, args):
+        args['fs_access'] = GCEFsAccess(self.config['bucket'])
+        return args
 
     def make_exec_tool(self, spec, **kwargs):
         return GCEPipelineTool(spec, self, **kwargs)

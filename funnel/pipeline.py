@@ -23,9 +23,13 @@ class Pipeline(object):
     def run_task(self, task):
         raise Exception("Pipeline.run_task() not implemented")
         
+    def configure(self, args):
+        return args
+
     def executor(self, tool, job_order, **kwargs):
         log.debug(kwargs)
 
+        kwargs = self.configure(kwargs)
         jobs = tool.job(job_order, self.output_callback, **kwargs)
 
         try:
