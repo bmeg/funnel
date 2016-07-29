@@ -1,3 +1,4 @@
+import os
 import math
 import random
 import string
@@ -97,9 +98,11 @@ class GCEPipelineJob(PipelineJob):
             path = (output['id'].replace(id + '#', ''), glob)
         elif output['type'] == 'Directory':
             if glob == '.':
-                glob = '/'
+                glob = '/*'
             elif not glob[-1] == '/':
-                glob = glob + '/'
+                glob = glob + '/*'
+            path = (output['id'].replace(id + '#', ''), glob)
+        else:
             path = (output['id'].replace(id + '#', ''), glob)
         return path
 
@@ -139,11 +142,13 @@ class GCEPipelineJob(PipelineJob):
         sorted_inputs.sort(key=lambda input: input_binding(input, 'position', 9999999))
         
         output_path = self.pipeline.config['output-path']
+        spec_outputs = {output['id'].replace(id + '#', ''): output for output in self.spec['outputs']}
         outputs = dictify([self.render_output(id, output) for output in self.spec['outputs']])
 
+        log.debug('SPEC OUTPUTS ------------' + pformat(spec_outputs))
         log.debug('OUTPUTS ------------' + pformat(outputs))
 
-        command_parts = self.spec['baseCommand'][:]
+        command_parts = ['cd', mount, '&&'] + self.spec['baseCommand'][:]
         if 'arguments' in self.spec:
             command_parts.extend(self.spec['arguments'])
 
@@ -174,7 +179,8 @@ class GCEPipelineJob(PipelineJob):
         operation = self.pipeline.run_task(task)
         collected = {output: {
             'path': outputs[output],
-            'class': 'File',
+            # 'Directory' if outputs[output][-1] == '/' else 'File',
+            'class': spec_outputs[output]['type'],
             'hostfs': False
         } for output in outputs}
 
@@ -243,6 +249,12 @@ class GCEPipeline(Pipeline):
         command = ['/mnt/data/' + parameter['localCopy']['path'] for parameter in input_parameters]
         return string.join(command, ' ')
 
+    def pipeline_output(self, output):
+        prefix = '' if output[0] == '/' else '/'
+        if output[-1] == '*':
+            output = output[:-2]
+        return prefix + output
+
     def create_task(self, project_id, container, service_account, bucket, command, inputs, outputs, output_path, mount):
         input_parameters = self.create_parameters(inputs, True)
         output_parameters = self.create_parameters(outputs)
@@ -276,7 +288,8 @@ class GCEPipeline(Pipeline):
                 
             'pipelineArgs' : {
                 'inputs': inputs,
-                'outputs': {output: 'gs://' + bucket + '/' + output_path + '/' + outputs[output] for output in outputs},
+                'outputs': {output: 'gs://' + bucket + '/' + output_path + self.pipeline_output(outputs[output]) for output in outputs},
+                # 'outputs': {output: 'gs://' + bucket + '/' + output_path + '/' + outputs[output] for output in outputs},
                 
                 'logging': {
                     'gcsPath': 'gs://' + bucket + '/' + project_id + '/logging'
