@@ -16,9 +16,12 @@ class GCEFsAccess(StdFsAccess):
         self.client = storage.Client()
         self.bucket = self.client.get_bucket(self.base)
 
+    def protocol(self):
+        return 'gs://' + self.base + '/'
+
     def _abs(self, path):
         log.debug('GCEFSACCESS abs ------------------ ' + path)
-        return os.path.join(self.base, path)
+        return os.path.join('gs://', self.base, path)
 
     def blob(self, path):
         log.debug('GCEFSACCESS blob ------------------ ' + path)
@@ -62,12 +65,17 @@ class GCEFsAccess(StdFsAccess):
 
     def listdir(self, path):
         log.debug('GCEFSACCESS listdir ------------------ ' + path)
+
         if not path[-1] == '/':
             path = path + '/'
-        if self.exists(path):
-            self.bucket.reload()
-            blobs = []
-            return [self._abs(blob) for blob in self.bucket.list_blobs() if blob.startswith(path)]
+
+        protocol = self.protocol()
+        if path.startswith(protocol):
+            path = path[len(protocol):]
+
+        self.bucket.reload()
+        blobs = self.bucket.list_blobs()
+        return [self._abs(blob.name) for blob in blobs if blob.name.startswith(path)]
 
     def join(self, path, *paths):
         return os.path.join(path, *paths)

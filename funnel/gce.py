@@ -48,14 +48,16 @@ class GCEPathMapper(cwltool.pathmapper.PathMapper):
             base = extract_gs(src['location'])
 
             if base.startswith('gs://'):
+                # ab = base
                 ab = base
+                ooob = base.replace('gs://', '')
                 iiib = base.split('/')[-1]
-                self._pathmap[src['location']] = (iiib, ab)
+                self._pathmap[src['location']] = (iiib, ooob)
             else:
                 ab = 'gs://' + bucket + '/' + output + '/' + base
                 self._pathmap[src['location']] = (ab, ab)
 
-            self._pathmap[ab] = (ab, ab)
+            self._pathmap[ab] = (ab, ab.replace('gs://', ''))
 
 class GCEPipelinePoll(PollThread):
     def __init__(self, service, operation, outputs, callback, poll_interval=5):
@@ -78,7 +80,9 @@ def dictify(lot):
 
 def input_binding(input, key, default):
     position = default
-    if 'inputBinding' in input:
+    if key in input:
+        position = input[key]
+    elif 'inputBinding' in input:
         if key in input['inputBinding']:
             position = input['inputBinding'][key]
 
@@ -89,11 +93,10 @@ class GCEPipelineJob(PipelineJob):
         super(GCEPipelineJob, self).__init__(spec, pipeline)
         self.running = False
         
-    def render_input(self, input):
-        return (input, self.builder.job[input]['path'])
-
     def render_output(self, id, output):
         glob = output['outputBinding']['glob']
+        if glob.startswith('$'):
+            glob = self.builder.do_eval(glob)
         if output['type'] == 'File':
             path = (output['id'].replace(id + '#', ''), glob)
         elif output['type'] == 'Directory':
@@ -106,21 +109,34 @@ class GCEPipelineJob(PipelineJob):
             path = (output['id'].replace(id + '#', ''), glob)
         return path
 
-    def command_input(self, id, mount, input):
-        input_id = input['id'].replace(id + '#', '')
-        prefix = input_binding(input, 'prefix', None)
-        
-        if input['type'] == 'File':
-            path = mount + '/' + self.builder.job[input_id]['path'].replace('gs://', '')
-        elif input['type'].startswith('boolean'):
-            path = ''
-        else:
-            path = self.builder.job[input_id]
+    def fill_path(self, path, entry):
+        base = os.path.basename(entry)
+        parts = path.split('/')
+        if parts[-1] == '*':
+            parts = parts[:-1]
+        parts.append(base)
+        return os.path.join(*parts)
 
-        if prefix:
-            return prefix + ' ' + path
+    def explode(self, output, fs):
+        contents = fs.listdir(output['location'])
+
+        log.debug('BUCKET CONTENTS ---------------------------------' + output['location'])
+        log.debug(pformat(contents))
+
+        return [{'location': entry,
+                 'class': 'File',
+                 'path': self.fill_path(output['path'], entry)} for entry in contents]
+
+    def is_collection(self, u):
+        return isinstance(self.joborder[u], list) or isinstance(self.joborder[u], dict)
+
+    def prepare_input(self, tuples, key):
+        input = self.joborder[key]
+        if isinstance(input, dict):
+            tuples.append((key, 'gs://' + input['path']))
         else:
-            return path
+            tuples.extend([(key + '_' + put['basename'], 'gs://' + put['path']) for put in input])
+        return tuples
 
     def run(self, dry_run=False, pull_image=True, **kwargs):
         id = self.spec['id']
@@ -132,15 +148,15 @@ class GCEPipelineJob(PipelineJob):
         log.debug('COMMAND ----------------------')
         log.debug(pformat(self.command_line))
 
+        log.debug('DIR JOB ----------------------')
+        log.debug(pformat(dir(self)))
+
+        log.debug('JOBORDER ----------------------')
+        log.debug(pformat(self.joborder))
+
         container = self.find_docker_requirement()
+        inputs = dictify(reduce(self.prepare_input, filter(self.is_collection, self.joborder), []))
 
-        file_inputs = filter(lambda input: input['type'] == 'File', self.spec['inputs'])
-        input_ids = [input['id'].replace(id + '#', '') for input in file_inputs]
-        inputs = dictify([self.render_input(input) for input in input_ids])
-
-        sorted_inputs = self.spec['inputs'][:]
-        sorted_inputs.sort(key=lambda input: input_binding(input, 'position', 9999999))
-        
         output_path = self.pipeline.config['output-path']
         spec_outputs = {output['id'].replace(id + '#', ''): output for output in self.spec['outputs']}
         outputs = dictify([self.render_output(id, output) for output in self.spec['outputs']])
@@ -148,14 +164,7 @@ class GCEPipelineJob(PipelineJob):
         log.debug('SPEC OUTPUTS ------------' + pformat(spec_outputs))
         log.debug('OUTPUTS ------------' + pformat(outputs))
 
-        command_parts = ['cd', mount, '&&'] + self.spec['baseCommand'][:]
-        if 'arguments' in self.spec:
-            command_parts.extend(self.spec['arguments'])
-
-        for input in sorted_inputs:
-            path = self.command_input(id, mount, input)
-            command_parts.append(path)
-
+        command_parts = ['cd', mount, '&&'] + self.command_line
         command = string.join(command_parts, ' ')
                 
         if 'stdout' in self.spec:
@@ -192,6 +201,9 @@ class GCEPipelineJob(PipelineJob):
                 path = out[key]
                 outputs[key]['location'] = path
 
+                if isinstance(outputs[key]['class'], dict):
+                    outputs[key] = self.explode(outputs[key], kwargs['fs_access'])
+
             log.debug('FINAL OUTPUT -----------------------------------')
             log.debug(pformat(outputs))
 
@@ -226,7 +238,7 @@ class GCEPipeline(Pipeline):
     def make_exec_tool(self, spec, **kwargs):
         return GCEPipelineTool(spec, self, **kwargs)
 
-    def create_parameters(self, puts, replace=False):
+    def create_parameters(self, puts, replace=True):
         parameters = []
         for put in puts:
             path = puts[put]
@@ -256,7 +268,7 @@ class GCEPipeline(Pipeline):
         return prefix + output
 
     def create_task(self, project_id, container, service_account, bucket, command, inputs, outputs, output_path, mount):
-        input_parameters = self.create_parameters(inputs, True)
+        input_parameters = self.create_parameters(inputs)
         output_parameters = self.create_parameters(outputs)
         
         create_body = {
@@ -289,7 +301,6 @@ class GCEPipeline(Pipeline):
             'pipelineArgs' : {
                 'inputs': inputs,
                 'outputs': {output: 'gs://' + bucket + '/' + output_path + self.pipeline_output(outputs[output]) for output in outputs},
-                # 'outputs': {output: 'gs://' + bucket + '/' + output_path + '/' + outputs[output] for output in outputs},
                 
                 'logging': {
                     'gcsPath': 'gs://' + bucket + '/' + project_id + '/logging'
