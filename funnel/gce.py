@@ -48,7 +48,6 @@ class GCEPathMapper(cwltool.pathmapper.PathMapper):
             base = extract_gs(src['location'])
 
             if base.startswith('gs://'):
-                # ab = base
                 ab = base
                 ooob = base.replace('gs://', '')
                 iiib = base.split('/')[-1]
