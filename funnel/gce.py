@@ -14,8 +14,11 @@ from gce_fsaccess import GCEFsAccess
 
 log = logging.getLogger('funnel')
 
-import httplib2shim
-httplib2shim.patch()
+try:
+    import httplib2shim
+    httplib2shim.patch()
+except ImportError:
+    pass
 
 try:
     from oauth2client.client import GoogleCredentials

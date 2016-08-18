@@ -36,7 +36,6 @@ class LocalStorePathMapper(cwltool.pathmapper.PathMapper):
                 src_path = src['location'][7:]
                 logging.debug("Copying %s to shared %s" % (src['location'], self.store_base))
                 dst = os.path.join(self.store_base, os.path.basename(src_path))
-                print src_path
                 shutil.copy(src_path, dst)
                 location = "fs://%s" % (os.path.basename(src['location']))
                 self._pathmap[src['location']] = MapperEnt(
@@ -132,7 +131,7 @@ class TESPipeline(Pipeline):
             }
             create_body['outputs'].append(parameter)
 
-        print "task", create_body
+        #print "task", create_body
         return create_body
 
     def make_exec_tool(self, spec, **kwargs):
@@ -148,7 +147,6 @@ class TESPipelineTool(cwltool.draft2tool.CommandLineTool):
         return TESPipelineJob(self.spec, self.pipeline)
 
     def makePathMapper(self, reffiles, stagedir, **kwargs):
-        print "Making pathmapper", reffiles, stagedir
         m = self.pipeline.service.get_server_metadata()
         if m['storageConfig'].get('storageType', "") == "sharedFile":
             return LocalStorePathMapper(reffiles, store_base=m['storageConfig']['baseDir'], **kwargs)
@@ -160,7 +158,8 @@ class TESPipelineJob(PipelineJob):
         
     def run(self, dry_run=False, pull_image=True, **kwargs):
         id = self.spec['id']
-
+        print self.spec['inputs']
+        print self.build.job
         input_ids = [input['id'].replace(id + '#', '') for input in self.spec['inputs']]
         inputs = {input: self.builder.job[input]['path'] for input in input_ids}
         
