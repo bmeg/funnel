@@ -16,13 +16,18 @@ if [ ! -e venv ]; then
   make depends
 fi
 
+if [ ! -e var/storage ]; then
+  mkdir -p var/storage
+fi 
+
 pushd task-execution-server
 make
 popd
 
+source venv/bin/activate
+
 supervisord
 
-source venv/bin/activate
 pushd common-workflow-language
 ./run_test.sh RUNNER=$BDIR/test/funnel-local-tes DRAFT=v1.0
 popd
