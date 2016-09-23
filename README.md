@@ -14,19 +14,18 @@ The system is working for the simple test case included (test/hashsplitter-workf
 
 If you just want to run some jobs locally and take advantage of the parallel execution of non-dependent tasks, it works much like the cwltool it is built on:
 
-    python funnel.py test/hashsplitter-workflow.cwl --input README.md
+    python -m funnel.main test/hashsplitter-workflow.cwl --input README.md
 
 If you want to run on GP, you must have a [GP enabled account](https://cloud.google.com/genomics/install-genomics-tools) and have gathered enough information to fill out the `gce_config.yaml` with your information:
 
     project-id: machine-generated-837
     service-account: SOMENUMBER-compute@developer.gserviceaccount.com
     bucket: your-bucket
-    container: samtools
     output-file: path/to/where/you/want/google/pipeline/to/put/your/output
 
 Once this is supplied, you can call the same command line as before with the `--gce` argument pointing to the GP config: this triggers usage of the GP. In addition, you must provide any input as a GB address:
 
-    python funnel.py --gce gce_config.yaml test/hashsplitter-workflow.cwl --input gs://hashsplitter/input/README.md
+    python -m funnel.main --gce gce_config.yaml test/hashsplitter-workflow.cwl --input gs://hashsplitter/input/README.md
 
 If your input is actually in that bucket and your GP config is correct, this will output something in the bucket location `gs://hashsplitter/output/unify`, along with whatever intermediate output was the result of previous steps.
 
