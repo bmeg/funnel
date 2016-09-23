@@ -1,0 +1,16 @@
+{
+  "index": {
+    "class": "File",
+    "location": "gs://dream-smc-rna-workshop/training/tophat_index.tar.gz",
+  },
+
+  "TUMOR_FASTQ_1": {
+    "class": "File",
+    "location": "gs://dream-smc-rna-workshop/training/dryrun5_mergeSort_1.fq.gz"
+  },
+
+  "TUMOR_FASTQ_2": {
+    "class": "File",
+    "location": "gs://dream-smc-rna-workshop/training/dryrun5_mergeSort_2.fq.gz"
+  }
+}
