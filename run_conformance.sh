@@ -27,6 +27,7 @@ popd
 source venv/bin/activate
 
 supervisord
+sleep 2
 
 pushd common-workflow-language
 ./run_test.sh RUNNER=$BDIR/test/funnel-local-tes DRAFT=v1.0
