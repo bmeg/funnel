@@ -108,7 +108,7 @@ class TESPipeline(Pipeline):
             'name': 'workdir',
             'location' : os.path.join(self.fs_access.protocol(), "work"),
             'path' : workdir,
-            'directory': True,
+            'class' : 'Directory',
             'create' : True
         })
 
