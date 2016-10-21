@@ -16,6 +16,7 @@ A couple of things need to be installed for Funnel to run.
 
 First, the latest version of cwl-runner:
 
+    sudo apt-get install greadlink
     sudo pip install --upgrade cwl-runner
 
 Then, the google api python client:

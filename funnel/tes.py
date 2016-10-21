@@ -1,4 +1,5 @@
 import os
+import json
 import shutil
 import logging
 from pprint import pformat
@@ -23,10 +24,10 @@ class LocalStorePathMapper(cwltool.pathmapper.PathMapper):
         self.setup(referenced_files, basedir)
 
     def setup(self, referenced_files, basedir):
-        log.debug("pathmapper.setup" + pformat(referenced_files))
+        log.debug("PATHMAPPER: " + pformat(referenced_files))
         self._pathmap = {}
         for src in referenced_files:
-            logging.debug(src)
+            log.debug('SOURCE: ' + str(src))
             if src['location'].startswith("fs://"):
                 target_name = os.path.basename(src['location'])
                 self._pathmap[src['location']] = MapperEnt(
@@ -47,6 +48,7 @@ class LocalStorePathMapper(cwltool.pathmapper.PathMapper):
                 )
             else:
                 raise Exception("Unknown file source: %s" %(src['location']))
+        log.debug('PATHMAP: ' + pformat(self._pathmap))
 
 class TESService:
     def __init__(self, addr):
@@ -102,11 +104,14 @@ class TESPipeline(Pipeline):
     def create_task(self, container, command, inputs, outputs, volumes, config, pathmapper, stdout=None, stderr=None):
         input_parameters = self.create_parameters(inputs, pathmapper)
         output_parameters = self.create_parameters(outputs, pathmapper, create=True)
-        
         workdir = os.path.join(BASE_MOUNT, "work")
+        
+        log.debug("FS_PROTOCOL" + self.fs_access.protocol())
+
         output_parameters.append({
             'name': 'workdir',
             'location' : os.path.join(self.fs_access.protocol(), "work"),
+            # 'location' : os.path.join(self.fs_access.protocol(), "work"),
             'path' : workdir,
             'class' : 'Directory',
             'create' : True
@@ -183,10 +188,9 @@ class TESPipelineJob(PipelineJob):
     def run(self, dry_run=False, pull_image=True, **kwargs):
         id = self.spec['id']
         
-        log.debug(pformat(self.spec))
-        log.debug(pformat(self.joborder))
-        log.debug(pformat(self.builder))
-        log.debug("generatefile:" + pformat(self.generatefiles))
+        log.debug('SPEC: ' + pformat(self.spec))
+        log.debug('JOBORDER: ' + pformat(self.joborder))
+        log.debug("GENERATEFILES: " + pformat(self.generatefiles))
         
         #prep the inputs
         inputs = {}
@@ -196,8 +200,9 @@ class TESPipelineJob(PipelineJob):
         
         output_path = self.pipeline.config.get('outloc', "output")
         
-        log.debug(pformat(self.spec['outputs']))
+        log.debug('SPEC_OUTPUTS: ' + pformat(self.spec['outputs']))
         outputs = {output['id'].replace(id + '#', ''): output['outputBinding']['glob'] for output in self.spec['outputs'] if 'outputBinding' in output}
+        log.debug('PRE_OUTPUTS: ' + pformat(outputs))
         
         stdout_path=self.spec.get('stdout', None)
         stderr_path=self.spec.get('stderr', None)
@@ -213,7 +218,6 @@ class TESPipelineJob(PipelineJob):
         
         container = self.find_docker_requirement()
 
-        log.debug(self.pathmapper)
         task = self.pipeline.create_task(
             container=container,
             command=self.command_line,
@@ -226,12 +230,14 @@ class TESPipelineJob(PipelineJob):
             stdout=stdout
         )
         
-        task = self.pipeline.service.submit(task)
-        operation = self.pipeline.service.get_job(task)
+        log.debug("TASK: " + pformat(task))
+
+        task_id = self.pipeline.service.submit(task)
+        operation = self.pipeline.service.get_job(task_id)
         collected = {output: {'location': "fs://output/" + outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
 
-        log.debug("op", operation)
-        log.debug(collected)
+        log.debug("OPERATION: " + pformat(operation))
+        log.debug('COLLECTED: ' + pformat(collected))
 
         poll = TESPipelinePoll(
             service=self.pipeline.service,
@@ -239,21 +245,33 @@ class TESPipelineJob(PipelineJob):
             outputs=collected,
             callback=self.jobCleanup
         )
+
         self.pipeline.add_thread(poll)
         poll.start()
     
     def jobCleanup(self, outputs):
-        
-        if self.fs_access.exists("cwl.output.json"):
+        log.debug('OUTPUT_PATH: ' + pformat(self.fs_access._abs("cwl.output.json")))
+        log.debug('OUTPUTS: ' + pformat(outputs))
+
+        if self.fs_access.exists("work/cwl.output.json"):
             log.debug("Found cwl.output.json file")
 
-        self.output_callback(outputs, 'success')
+        final = {}
+        for output in self.spec['outputs']:
+            type = output['type']
+            if isinstance(type, dict):
+                if 'type' in type:
+                    if type['type'] == 'array':
+                        with self.fs_access.open("work/cwl.output.json", 'r') as args:
+                            final = json.loads(args.read())
+
+        self.output_callback(final, 'success')
     
     def output2location(self, path):
         return "fs://output/" + os.path.basename(path)
         
     def output2path(self, path):
-        return "/mnt/" + path    
+        return "/mnt/" + path
 
 
 class TESPipelinePoll(PollThread):
@@ -270,5 +288,5 @@ class TESPipelinePoll(PollThread):
         return operation['state'] in ['Complete', 'Error']
 
     def complete(self, operation):
-        self.callback(self.outputs)
+        self.callback(operation)
 

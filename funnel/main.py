@@ -68,6 +68,7 @@ def arg_parser():    # type: () -> argparse.ArgumentParser
     exgroup.add_argument("--debug", action="store_true", help="Print even more logging")
 
     parser.add_argument("--tool-help", action="store_true", help="Print command line help for tool")
+    parser.add_argument("--default-container", default="python", help="default docker container to use")
 
     parser.add_argument("--project-uuid", type=str, help="Project that will own the workflow jobs, if not provided, will go to home project.")
     parser.add_argument("--ignore-docker-for-reuse", action="store_true",

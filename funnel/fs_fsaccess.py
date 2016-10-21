@@ -13,10 +13,10 @@ class FsFsAccess(StdFsAccess):
         self.storage = storage
 
     def _abs(self, p):  # type: (unicode) -> unicode
-        return os.path.abspath(os.path.join(self.storage, self.base, p))
+        return os.path.abspath(os.path.join(self.base, self.storage, p))
     
     def protocol(self):
-        return 'fs://' + self.base + '/'
+        return 'fs://' + self.storage + '/'
 
     def glob(self, pattern):  # type: (unicode) -> List[unicode]
         return ["fs://%s" % self._abs(l) for l in glob.glob(self._abs(pattern))]

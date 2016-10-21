@@ -8,12 +8,14 @@ fi
 
 if [ ! -e venv ]; then
   virtualenv venv
-	venv/bin/pip install cwltool supervisor
+  venv/bin/pip install cwltool supervisor pyyaml
 fi
 
-if [ ! -e venv ]; then
+if [ ! -e task-execution-server ]; then
   git clone --recursive https://github.com/bmeg/task-execution-server.git
-  make depends
+  pushd task-execution-server
+    make depends
+  popd
 fi
 
 if [ ! -e var/storage ]; then
@@ -21,7 +23,7 @@ if [ ! -e var/storage ]; then
 fi 
 
 pushd task-execution-server
-make
+  make
 popd
 
 source venv/bin/activate
@@ -30,7 +32,7 @@ supervisord
 sleep 2
 
 pushd common-workflow-language
-./run_test.sh RUNNER=$BDIR/test/funnel-local-tes DRAFT=v1.0
+./run_test.sh -n1 RUNNER=$BDIR/test/funnel-local-tes DRAFT=v1.0
 popd
 
 supervisorctl shutdown
