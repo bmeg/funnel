@@ -1,7 +1,9 @@
 import os
+import glob
 import fnmatch
 import logging
 from io import BytesIO
+from pprint import pformat
 from cwltool.stdfsaccess import StdFsAccess
 
 log = logging.getLogger('funnel')
@@ -19,7 +21,13 @@ class FsFsAccess(StdFsAccess):
         return 'fs://' + self.storage + '/'
 
     def glob(self, pattern):  # type: (unicode) -> List[unicode]
-        return ["fs://%s" % self._abs(l) for l in glob.glob(self._abs(pattern))]
+        absolute = self._abs(pattern)
+        globs = glob.glob(absolute)
+        log.debug("ABSOLUTE: " + pformat(absolute))
+        log.debug("GLOBS: " + pformat(globs))
+
+        return [self._abs(l) for l in globs]
+        # return ["fs://%s" % self._abs(l) for l in globs]
 
     def open(self, fn, mode):  # type: (unicode, str) -> BinaryIO
         return open(self._abs(fn), mode)

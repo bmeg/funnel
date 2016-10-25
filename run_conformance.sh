@@ -31,8 +31,13 @@ source venv/bin/activate
 supervisord
 sleep 2
 
+if [ -n "$1" ]; then
+    TEST=-n$1
+fi
+
 pushd common-workflow-language
-./run_test.sh -n1 RUNNER=$BDIR/test/funnel-local-tes DRAFT=v1.0
+#./run_test.sh RUNNER=$BDIR/test/funnel-local-tes DRAFT=v1.0
+./run_test.sh $TEST RUNNER=$BDIR/test/funnel-local-tes DRAFT=v1.0
 popd
 
 supervisorctl shutdown

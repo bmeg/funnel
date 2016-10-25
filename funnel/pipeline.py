@@ -6,7 +6,7 @@ from pprint import pformat
 from cwltool.errors import WorkflowException
 
 log = logging.getLogger('funnel')
-DEFAULT_IMAGE = "ubuntu:15.04"
+DEFAULT_IMAGE = "ubuntu:16.04"
 
 class Pipeline(object):
     def __init__(self, config):
@@ -81,10 +81,14 @@ class PipelineJob(object):
         self.running = False
         
     def find_docker_requirement(self):
-        container=DEFAULT_IMAGE
+        default = DEFAULT_IMAGE
+        if self.pipeline.args.default_container:
+            default = self.pipeline.args.default_container
+        container = default
+
         for i in self.spec.get("requirements", []) + self.spec.get("hints", []):
             if i.get("class", "NA") == "DockerRequirement":
-                container = i.get("dockerPull", DEFAULT_IMAGE)
+                container = i.get("dockerPull", default)
 
         return container
 

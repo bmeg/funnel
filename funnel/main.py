@@ -27,12 +27,12 @@ def main(args):
     elif newargs.tes is not None:
         with open(newargs.tes) as handle:
             config = yaml.load(handle.read())
-            pipeline = TESPipeline(config)
+            pipeline = TESPipeline(config, newargs)
     elif len(newargs.tes_configs):
         d = {}
         for k, v in newargs.tes_configs:
             d[k] = v
-        pipeline = TESPipeline(d)
+        pipeline = TESPipeline(d, newargs)
     else:
         config = {}
         pipeline = CommandPipeline(config)

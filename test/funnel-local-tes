@@ -2,4 +2,4 @@
 
 BDIR="$(cd `dirname $0`; pwd)"
 
-python $BDIR/../funnel/main.py --default-container python:2.7 -t url http://localhost:8000 $*
+python $BDIR/../funnel/main.py --default-container python -t url http://localhost:8000 $*

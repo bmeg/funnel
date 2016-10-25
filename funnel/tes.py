@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import logging
+import hashlib
 from pprint import pformat
 
 import cwltool.draft2tool
@@ -10,6 +11,7 @@ from cwltool.pathmapper import MapperEnt
 from poll import PollThread
 from pipeline import Pipeline, PipelineJob
 from fs_fsaccess import FsFsAccess
+
 try:
     import requests
 except ImportError:
@@ -70,8 +72,9 @@ class TESService:
         return r.json()
 
 class TESPipeline(Pipeline):
-    def __init__(self, config):
+    def __init__(self, config, args):
         super(TESPipeline, self).__init__(config)
+        self.args = args
         self.service = TESService(config['url'])
         meta = self.service.get_server_metadata()
         if meta['storageConfig'].get("storageType", "") == "sharedFile":
@@ -111,7 +114,6 @@ class TESPipeline(Pipeline):
         output_parameters.append({
             'name': 'workdir',
             'location' : os.path.join(self.fs_access.protocol(), "work"),
-            # 'location' : os.path.join(self.fs_access.protocol(), "work"),
             'path' : workdir,
             'class' : 'Directory',
             'create' : True
@@ -190,7 +192,7 @@ class TESPipelineJob(PipelineJob):
         
         log.debug('SPEC: ' + pformat(self.spec))
         log.debug('JOBORDER: ' + pformat(self.joborder))
-        log.debug("GENERATEFILES: " + pformat(self.generatefiles))
+        log.debug('GENERATEFILES: ' + pformat(self.generatefiles))
         
         #prep the inputs
         inputs = {}
@@ -198,6 +200,11 @@ class TESPipelineJob(PipelineJob):
             if isinstance(v, dict):
                 inputs[k] = v['location']
         
+        for listing in self.generatefiles['listing']:
+            if listing['class'] == 'File':
+                with self.fs_access.open(listing['basename'], 'wb') as gen:
+                    gen.write(listing['contents'])
+
         output_path = self.pipeline.config.get('outloc', "output")
         
         log.debug('SPEC_OUTPUTS: ' + pformat(self.spec['outputs']))
@@ -234,7 +241,7 @@ class TESPipelineJob(PipelineJob):
 
         task_id = self.pipeline.service.submit(task)
         operation = self.pipeline.service.get_job(task_id)
-        collected = {output: {'location': "fs://output/" + outputs[output], 'class': 'File', 'hostfs': False} for output in outputs}
+        collected = {output: {'location': "fs://output/" + outputs[output], 'class': 'File'} for output in outputs}
 
         log.debug("OPERATION: " + pformat(operation))
         log.debug('COLLECTED: ' + pformat(collected))
@@ -249,21 +256,44 @@ class TESPipelineJob(PipelineJob):
         self.pipeline.add_thread(poll)
         poll.start()
     
-    def jobCleanup(self, outputs):
-        log.debug('OUTPUT_PATH: ' + pformat(self.fs_access._abs("cwl.output.json")))
+    def jobCleanup(self, operation, outputs):
+        log.debug('OPERATION: ' + pformat(operation))
         log.debug('OUTPUTS: ' + pformat(outputs))
-
-        if self.fs_access.exists("work/cwl.output.json"):
-            log.debug("Found cwl.output.json file")
+        # log.debug('CWL_OUTPUT_PATH: ' + pformat(self.fs_access._abs("cwl.output.json")))
 
         final = {}
-        for output in self.spec['outputs']:
-            type = output['type']
-            if isinstance(type, dict):
-                if 'type' in type:
-                    if type['type'] == 'array':
-                        with self.fs_access.open("work/cwl.output.json", 'r') as args:
-                            final = json.loads(args.read())
+        if self.fs_access.exists("work/cwl.output.json"):
+            log.debug("Found cwl.output.json file")
+            with self.fs_access.open("work/cwl.output.json", 'r') as args:
+                cwl_output = json.loads(args.read())
+            final.update(cwl_output)
+        else:
+            for output in self.spec['outputs']:
+                type = output['type']
+                if isinstance(type, dict):
+                    if 'type' in type:
+                        if type['type'] == 'array':
+                            with self.fs_access.open("work/cwl.output.json", 'r') as args:
+                                final = json.loads(args.read())
+                elif type == 'File':
+                    id = output['id'].replace(self.spec['id'] + '#', '')
+                    binding = output['outputBinding']['glob']
+                    glob = self.fs_access.glob(binding)
+                    log.debug('GLOB: ' + pformat(glob))
+                    with self.fs_access.open(glob[0], 'rb') as handle:
+                        contents = handle.read()
+                        size = len(contents)
+                        checksum = hashlib.sha1(contents)
+                        hex = "sha1$%s" % checksum.hexdigest()
+
+                    collect = {
+                        'location': os.path.basename(glob[0]),
+                        'class': 'File',
+                        'size': size,
+                        'checksum': hex
+                    }
+
+                    final[id] = collect
 
         self.output_callback(final, 'success')
     
@@ -288,5 +318,5 @@ class TESPipelinePoll(PollThread):
         return operation['state'] in ['Complete', 'Error']
 
     def complete(self, operation):
-        self.callback(operation)
+        self.callback(operation, self.outputs)
 
