@@ -1,2 +1,10 @@
 *.pyc
 gce.yaml
+common-workflow-language/
+conformance-output
+supervisord.log
+task-execution-server/
+test/conformance/
+var/
+venv/
+volumes/

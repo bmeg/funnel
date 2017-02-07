@@ -2,8 +2,10 @@ import os
 import fnmatch
 import logging
 from io import BytesIO
-from gcloud import storage
-
+try:
+    from gcloud import storage
+except ImportError:
+    storage = None
 from cwltool.stdfsaccess import StdFsAccess
 
 log = logging.getLogger('funnel')

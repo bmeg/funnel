@@ -1,0 +1,5 @@
+#!/bin/bash
+
+BDIR="$(cd `dirname $0`; pwd)"
+
+python $BDIR/../funnel/main.py --default-container python -t url http://localhost:8000 $*

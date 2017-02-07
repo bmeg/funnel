@@ -27,7 +27,12 @@ def main(args):
     elif newargs.tes is not None:
         with open(newargs.tes) as handle:
             config = yaml.load(handle.read())
-            pipeline = TESPipeline(config)
+            pipeline = TESPipeline(config, newargs)
+    elif len(newargs.tes_configs):
+        d = {}
+        for k, v in newargs.tes_configs:
+            d[k] = v
+        pipeline = TESPipeline(d, newargs)
     else:
         config = {}
         pipeline = CommandPipeline(config)
@@ -42,6 +47,9 @@ def arg_parser():    # type: () -> argparse.ArgumentParser
     parser.add_argument("--outdir", type=str, default=os.path.abspath('.'),
                         help="Output directory, default current directory")
     parser.add_argument("--conformance-test", action="store_true", default=False)
+    
+    parser.add_argument("--tmp-outdir-prefix")
+    parser.add_argument("--tmpdir-prefix")
 
     parser.add_argument("--eval-timeout",
                         help="Time to wait for a Javascript expression to evaluate before giving an error, default 20s.",
@@ -52,6 +60,7 @@ def arg_parser():    # type: () -> argparse.ArgumentParser
     parser.add_argument("--gce", default=None, help="Google Compute Config")
         
     parser.add_argument("--tes", default=None, help="Task Execution System Config")
+    parser.add_argument("-t", dest="tes_configs", default=None, action="append", nargs=2)
 
     exgroup = parser.add_mutually_exclusive_group()
     exgroup.add_argument("--verbose", action="store_true", help="Default logging")
@@ -59,6 +68,7 @@ def arg_parser():    # type: () -> argparse.ArgumentParser
     exgroup.add_argument("--debug", action="store_true", help="Print even more logging")
 
     parser.add_argument("--tool-help", action="store_true", help="Print command line help for tool")
+    parser.add_argument("--default-container", default="python", help="default docker container to use")
 
     parser.add_argument("--project-uuid", type=str, help="Project that will own the workflow jobs, if not provided, will go to home project.")
     parser.add_argument("--ignore-docker-for-reuse", action="store_true",
