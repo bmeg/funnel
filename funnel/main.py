@@ -28,7 +28,7 @@ def main(args):
         with open(newargs.tes) as handle:
             config = yaml.load(handle.read())
             pipeline = TESPipeline(config, newargs)
-    elif len(newargs.tes_configs):
+    elif newargs.tes_configs is not None and len(newargs.tes_configs):
         d = {}
         for k, v in newargs.tes_configs:
             d[k] = v
