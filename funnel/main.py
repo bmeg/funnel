@@ -40,13 +40,17 @@ def main(args):
     cwltool.main.main(args=newargs, executor=pipeline.executor, makeTool=pipeline.make_tool)
 
 def arg_parser():    # type: () -> argparse.ArgumentParser
-    parser = argparse.ArgumentParser(description='Arvados executor for Common Workflow Language')
+    parser = argparse.ArgumentParser(description='Funnel Client for Common Workflow Language')
 
     parser.add_argument("--basedir", type=str,
                         help="Base directory used to resolve relative references in the input, default to directory of input object file or current directory (if inputs piped/provided on command line).")
     parser.add_argument("--outdir", type=str, default=os.path.abspath('.'),
                         help="Output directory, default current directory")
     parser.add_argument("--conformance-test", action="store_true", default=False)
+    
+    parser.add_argument("--no-container", action="store_false", default=True,
+                    help="Do not execute jobs in a Docker container, even when specified by the CommandLineTool",
+                    dest="use_container")
     
     parser.add_argument("--tmp-outdir-prefix")
     parser.add_argument("--tmpdir-prefix")
